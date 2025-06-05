@@ -1,36 +1,47 @@
-# from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field
 from sqlmodel import SQLModel, Field
-from typing import List, Optional
+from typing import List, Optional, Annotated
 from datetime import datetime, timezone
 import sqlmodel
+from fastapi.security import OAuth2PasswordRequestForm
+from fastapi import Form
+
 
 def get_utc_now():
     return datetime.now(timezone.utc).replace(tzinfo=timezone.utc)
 
-class EventUser(SQLModel, table=True):  #table= True
-    id: Optional[int] = Field(default=None, primary_key=True)
-    # id: int
-    page: Optional[str] = None  #Optional Khong bat buoc mac dinh la chuoi rong
-    descriptions: Optional[str] = None
-    created_at: datetime = Field(
-        default_factory=get_utc_now,  # Tu dong gan time neu time o co
-        sa_type= sqlmodel.DateTime(timezone=True),
-        nullable=False
-    )
-    update_at: datetime = Field(
-        default_factory=get_utc_now,  # Tu dong gan time neu time o co
-        sa_type= sqlmodel.DateTime(timezone=True),
-        nullable=False
-    )
+class User(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    username:str
+    email: str
+    password: str
 
 
-class EventListScheme(SQLModel):
-    results: List[EventUser]
-    count: int
+#Field(foreign_key="user.id")
+class RegisterUser(BaseModel):
+    username: Annotated[
+        str,
+        Form(),
+    ]
+    email: Annotated[
+        str,
+        Form(),
+    ]
+    password: Annotated[
+        str,
+        Form(),
+    ]
 
-class EventCreateSchema(SQLModel):
-    path: str
-    desscription: Optional[str] = Field(default="my description") #Field de hien thi ngoai scheme doc
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    refresh_token: str
 
-class EventUploadSchema(SQLModel):
-    descriptions: str
+class TokenData(BaseModel):
+    username: str
+
+class RefreshTokenData(BaseModel):
+    email: str
+
+class RefreshRequest(BaseModel):
+    old_refresh_data: str

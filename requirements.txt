@@ -8,4 +8,8 @@ sqlalchemy
 requests
 python-decouple
 psycopg[binary]
+python-multipart
+bcrypt==4.0.1
+passlib[bcrypt]
+python-jose[cryptography]
 # psycopg2-binary

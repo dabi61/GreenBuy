@@ -1,11 +1,12 @@
-import sqlmodel
 from .config import DATABASE_URL
 from sqlmodel import SQLModel, Session
-import timescaledb
+import sqlmodel
+
 if DATABASE_URL == "":
     raise NotImplementedError("DATABASE_URL needs to be set")
 
-
+print("DATABASE_URL =", DATABASE_URL)
+print("TYPE =", type(DATABASE_URL))
 engine = sqlmodel.create_engine(DATABASE_URL)
 
 

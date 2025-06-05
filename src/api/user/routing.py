@@ -1,6 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
+from typing import  Annotated
 from sqlmodel import Session, select
 from api.db.session import get_session
+from api.user.utils import getUserFromDb
+from api.auth.auth_utils import hash_password, oauth_scheme
+from .model import RegisterUser, User
 import os
 from api.db.config import DATABASE_URL
 
@@ -8,81 +12,31 @@ from api.db.config import DATABASE_URL
 
 
 from .model import (
-    EventUser,
-    EventListScheme,
-    EventCreateSchema,
-    EventUploadSchema,
     get_utc_now
     )
+
+
 router = APIRouter()
-# GET DATA HERE
-#List View
-@router.get("/", response_model=EventListScheme)
-def read_users(session: Session = Depends(get_session)):
-    query = select(EventUser).order_by(EventUser.update_at.desc()).limit(10)
-    results = session.exec(query).all()
-    return {
-        "results": results,
-        "count": len(results)
-    }
 
-# SEND DATA HERE
-# Create View
-# POST /api/events
-@router.post("/", response_model=EventUser)
-def create_event(
-    payload: EventCreateSchema,
-    session: Session = Depends(get_session)):
-    data = payload.model_dump() #payload -> dict -> pydantic
-    obj = EventUser.model_validate(data)
-    session.add(obj)
+@router.get("/")
+async def read_user():
+    return {"message": "Wellcome to GreenBuy!"}
+
+@router.post("/register")
+async def register_user(new_user: Annotated[RegisterUser, Depends()],
+                        session: Annotated[Session, Depends(get_session)]):
+    db_user = getUserFromDb(session, new_user.username, new_user.email)
+    if db_user:
+        HTTPException(status_code=409, detail="User with these credentials already exists")
+    user = User(username = new_user.username,
+                email = new_user.email,
+                password = hash_password(new_user.password))
+    session.add(user)
     session.commit()
-    session.refresh(obj)
-    return obj
+    session.refresh(user)
+    return {"message": f""" User with {user.username} successfull registed"""}
 
 
-@router.get("/{event_id}", response_model=EventUser)
-def get_event(event_id: int, session: Session = Depends(get_session)):
-    query = select(EventUser).where(EventUser.id == event_id)
-    results = session.exec(query).first()
-    if not results:
-        raise HTTPException(status_code=404, detail="Event Not Found")
-    # a single row
-    return results
-
-@router.delete("{event_id}", response_model=EventUser)
-def delete_event(event_id: int, session: Session = Depends(get_session)):
-    query = select(EventUser).where(EventUser.id == event_id)
-    results = session.exec(query).first()
-    if not results:
-        raise HTTPException(status_code=404, detail="Event Not Found")
-    # a single row
-    session.delete(results) #Delete
-    session.commit() #commit
-    return results
-
-
-
-@router.put("/{event_id}", response_model=EventUser)
-def update_event(
-    event_id: int,
-    payload: EventUploadSchema,
-    session: Session = Depends(get_session)):
-    query = select(EventUser).where(EventUser.id == event_id)
-    obj = session.exec(query).first()
-    if not obj:
-        raise HTTPException(status_code=404, detail="Event Not Found")
-
-    data = payload.model_dump()
-    for k, v in data.items():
-        # if k == 'id':  #Mo len de tranh cap nhat field id Nhung minh thiet ke payload kia thi khong can thiet
-        #     continue
-        setattr(obj, k, v)
-    obj.update_at = get_utc_now()
-        # obj.create_at =
-
-    session.add(obj)
-    session.commit()
-    session.refresh(obj)
-    return obj
-
+@router.get("/me")
+async def user_profile(current_user: Annotated[User, Depends(oauth_scheme)]):   #Depends la gan phu thuoc, o day api nay phu thuoc vao viec xac thuc moi cho su dung
+    return current_user

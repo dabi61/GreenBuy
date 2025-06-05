@@ -6,7 +6,7 @@ services:
       dockerfile: Dockerfile.web
     environment:
       - PORT=8002
-      - DATABASE_URL=postgresql+psycopg://time-user:time-pw@db_service:5432/greenbuy
+      - DATABASE_URL=postgresql+psycopg://time-user:time-pw@localhost:5432/greenbuy
     env_file:
       - .env.compose
     ports:

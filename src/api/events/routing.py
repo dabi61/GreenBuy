@@ -1,8 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
+from api.auth.dependency import get_current_user
 from api.db.session import get_session
+from api.user.model import User
+from typing import Annotated
+from api.user.utils import getUserFromDb
+from api.auth.auth_utils import hash_password, oauth_scheme
 import os
-from api.db.config import DATABASE_URL
+from api.db.config import DATABASE_URL 
+from api.auth.auth import SECRET_KEY, ALGOGRYTHYM
 
 
 
@@ -31,6 +37,7 @@ def read_events(session: Session = Depends(get_session)):
 # POST /api/events
 @router.post("/", response_model=EventModel)
 def create_event(
+    current_user: Annotated[User, Depends(get_current_user)],
     payload: EventCreateSchema,
     session: Session = Depends(get_session)):
     data = payload.model_dump() #payload -> dict -> pydantic

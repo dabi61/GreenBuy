@@ -22,6 +22,7 @@ class EventModel(SQLModel, table=True):  #table= True
         sa_type= sqlmodel.DateTime(timezone=True),
         nullable=False
     )
+    user_id: int = Field(foreign_key="user.id") #Khoa phu 
 
 
 class EventListScheme(SQLModel):
