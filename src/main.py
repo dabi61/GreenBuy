@@ -9,7 +9,9 @@ from typing import Annotated
 from fastapi import Depends, HTTPException
 from sqlmodel import Session
 from datetime import timedelta
-from api.user.model import Token, RefreshRequest
+from api.user.scheme import Token, RefreshRequest
+from api.user.protected_routing import router as user_protected_router
+from api.address.routing import router as address_router
 
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,18 +29,16 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # <- sửa lại đúng chính tả
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.include_router(event_router, prefix='/api/events') #/api/events
-app.include_router(user_router, prefix='/api/user', tags=["User"])
+app.include_router(event_router, prefix='/api/events', tags=["Events"]) #/api/events
+app.include_router(user_router, prefix='/api/user', tags=["Register"])
+app.include_router(user_protected_router, prefix='/api/user', tags=["User"])
+app.include_router(address_router, prefix='/api/address', tags=["Address"])
 
-
-@app.get("/")
-def read_root():
-    return {"message": "Hello, world!"}
 
 
 @app.get("/healthz")

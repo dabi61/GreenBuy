@@ -3,7 +3,7 @@ from typing import Annotated
 from sqlmodel import Session, select
 from api.db.session import get_session
 from fastapi import Depends, HTTPException, status
-from api.user.model import User, Token, TokenData, RefreshTokenData
+from api.user.scheme import Token, TokenData, RefreshTokenData
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from datetime import datetime, timezone, timedelta
