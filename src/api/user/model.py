@@ -21,7 +21,6 @@ class User(SQLModel, table=True):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     username:Optional[str]
-    addresses: list["Address"] = Relationship(back_populates="user")
     email: str
     password: str
     birth_of_date: Optional[datetime] = None
@@ -30,6 +29,8 @@ class User(SQLModel, table=True):
     is_online: Optional[bool] = False
     role: UserRole =  Field(default=UserRole.buyer)
     create_at: datetime = Field(default_factory=datetime.utcnow)
+    addresses: list["Address"] = Relationship(back_populates="user")
+    shop: Optional["Shop"] = Relationship(back_populates="user") # Quan hệ 1-1 với Shop
 
 
 class UserUpdateResponse(BaseModel):
@@ -49,6 +50,7 @@ class RegisterUser(BaseModel):
 
 class RoleChangeRequest(BaseModel):
     new_role: UserRole  # seller hoặc approve
+
 
 
 

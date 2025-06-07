@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, status
+from fastapi.staticfiles import StaticFiles
 from api.events import router as event_router
 from api.user import router as user_router
 from contextlib import asynccontextmanager
@@ -12,6 +13,10 @@ from datetime import timedelta
 from api.user.scheme import Token, RefreshRequest
 from api.user.protected_routing import router as user_protected_router
 from api.address.routing import router as address_router
+from api.shop.routing import router as shop_router
+from api.category.routing import router as category_router
+from api.sub_category.routing import router as sub_category_router
+
 
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,7 +42,11 @@ app.add_middleware(
 app.include_router(event_router, prefix='/api/events', tags=["Events"]) #/api/events
 app.include_router(user_router, prefix='/api/user', tags=["Register"])
 app.include_router(user_protected_router, prefix='/api/user', tags=["User"])
-app.include_router(address_router, prefix='/api/address', tags=["Address"])
+app.include_router(address_router, prefix='/api/addresses', tags=["Address"])
+app.include_router(shop_router, prefix='/api/shops', tags=["Shop"])
+app.include_router(category_router, prefix='/api/category', tags=["Category"])
+app.include_router(sub_category_router, prefix='/api/sub_category', tags=["SubCategory"])
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 

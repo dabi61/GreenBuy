@@ -8,7 +8,7 @@ from api.user.model import User
 from api.address.model import Address
 router = APIRouter()
 
-@router.get("/addresses", response_model=List[AddressRead])
+@router.get("/", response_model=List[AddressRead])
 def get_all_addresses(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Session = Depends(get_session),
@@ -19,7 +19,7 @@ def get_all_addresses(
     return addresses
 
 
-@router.get("/addresses/{address_id}", response_model=AddressRead)
+@router.get("/{address_id}", response_model=AddressRead)
 def get_address(
     address_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -33,7 +33,7 @@ def get_address(
     return address
 
 
-@router.post("/addresses", response_model=AddressRead)
+@router.post("/", response_model=AddressRead)
 def create_address(
     payload: AddressCreate,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -46,7 +46,7 @@ def create_address(
     return address
 
 
-@router.put("/addresses/{address_id}", response_model=AddressRead)
+@router.put("/{address_id}", response_model=AddressRead)
 def update_address(
     address_id: int,
     payload: AddressUpdate,
