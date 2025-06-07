@@ -16,6 +16,7 @@ from api.address.routing import router as address_router
 from api.shop.routing import router as shop_router
 from api.category.routing import router as category_router
 from api.sub_category.routing import router as sub_category_router
+from api.product.routing import router as product_router
 
 
 
@@ -46,6 +47,7 @@ app.include_router(address_router, prefix='/api/addresses', tags=["Address"])
 app.include_router(shop_router, prefix='/api/shops', tags=["Shop"])
 app.include_router(category_router, prefix='/api/category', tags=["Category"])
 app.include_router(sub_category_router, prefix='/api/sub_category', tags=["SubCategory"])
+app.include_router(product_router, prefix='/api/product', tags=["Product"])
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 

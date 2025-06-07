@@ -31,6 +31,7 @@ class User(SQLModel, table=True):
     create_at: datetime = Field(default_factory=datetime.utcnow)
     addresses: list["Address"] = Relationship(back_populates="user")
     shop: Optional["Shop"] = Relationship(back_populates="user") # Quan hệ 1-1 với Shop
+    approved_product: Optional["Product"] = Relationship(back_populates="approver")
 
 
 class UserUpdateResponse(BaseModel):

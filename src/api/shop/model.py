@@ -1,5 +1,5 @@
 from sqlmodel import SQLModel, Field, Relationship
-from typing import Optional
+from typing import List, Optional
 from datetime import datetime
 
 class Shop(SQLModel, table=True):
@@ -17,3 +17,4 @@ class Shop(SQLModel, table=True):
 
     # Nếu bạn muốn truy xuất user ngược lại
     user: Optional["User"] = Relationship(back_populates="shop")
+    products: List["Product"] = Relationship(back_populates="shop")
