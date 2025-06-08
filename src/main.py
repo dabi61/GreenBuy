@@ -21,7 +21,7 @@ from api.cart.routing import router as cart_router
 from api.order.routing import router as order_router
 from api.attribute.routing import router as attribute_router
 from api.chat.routing import router as chat_router
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -33,7 +33,16 @@ async def lifespan( app:FastAPI):
     yield
     #clean up
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan,
+            title="GreenBuy API",
+            description="API cho hệ thống GreenBuy - ứng dụng thương mại điện tử",
+            version="1.0.0",
+            )
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return FileResponse("static/favicon.png")
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,7 +63,6 @@ app.include_router(cart_router, prefix='/api/cart', tags=["Cart"])
 app.include_router(order_router, prefix='/api/order', tags=["Order"])
 app.include_router(attribute_router, prefix='/api/attribute', tags=["Attribute"])
 app.include_router(chat_router, prefix='/api/chat', tags=["Chat"])
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 
