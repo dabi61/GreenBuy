@@ -52,7 +52,7 @@ app.include_router(sub_category_router, prefix='/api/sub_category', tags=["SubCa
 app.include_router(product_router, prefix='/api/product', tags=["Product"])
 app.include_router(cart_router, prefix='/api/cart', tags=["Cart"])
 app.include_router(order_router, prefix='/api/order', tags=["Order"])
-app.include_router(attribute_router, prefix='/api/Attribute', tags=["Attribute"])
+app.include_router(attribute_router, prefix='/api/attribute', tags=["Attribute"])
 app.include_router(chat_router, prefix='/api/chat', tags=["Chat"])
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

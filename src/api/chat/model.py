@@ -15,5 +15,5 @@ class ChatMessage(SQLModel, table=True):
     sender_id: int = Field(foreign_key="user.id")
     content: str
     type: str = Field(default="text")  # "text" hoặc "image"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    room: Optional["ChatRoom"] = Relationship(back_populates="messages") 
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    room: Optional["ChatRoom"] = Relationship(back_populates="messages")

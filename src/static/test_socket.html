@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+</head>
+<body>
+    <h1>WebSocket Chat Test</h1>
+    <input id="roomId" placeholder="Room ID" value="1" />
+    <input id="messageInput" placeholder="Enter message" />
+    <button onclick="sendMessage()">Send</button>
+    <ul id="messages"></ul>
+
+    <script>
+        let socket;
+
+        document.getElementById("roomId").addEventListener("change", connect);
+
+        function connect() {
+            const roomId = document.getElementById("roomId").value;
+            const url = `ws://localhost:8002/api/chat/ws/chat/${roomId}`;
+
+            if (socket) {
+                socket.close();
+            }
+
+            socket = new WebSocket(url);
+
+            socket.onopen = () => {
+                console.log("Connected to WebSocket");
+            };
+
+            socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            const li = document.createElement("li");
+            li.innerText = `[${data.timestamp ?? "now"}] User ${data.sender_id}: ${data.content}`;
+            messages.appendChild(li);
+            };
+
+            socket.onerror = (event) => {
+                console.error("WebSocket error:", event);
+                alert("WebSocket error (check console and backend)");
+            };
+
+            socket.onclose = () => {
+                console.log("WebSocket closed");
+            };
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById("messageInput");
+            const roomId = document.getElementById("roomId").value;
+
+            const data = {
+                sender_id: 1,  // 👈 đổi thành user_id thực tế nếu cần
+                content: messageInput.value,
+                type: "text"
+            };
+
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify(data));
+                messageInput.value = "";
+            } else {
+                alert("WebSocket not connected");
+            }
+        }
+
+        window.onload = connect;
+    </script>
+</body>
+</html>
