@@ -42,7 +42,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.include_router(event_router, prefix='/api/events', tags=["Events"]) #/api/events
+# app.include_router(event_router, prefix='/api/events', tags=["Events"]) #/api/events
 app.include_router(user_router, prefix='/api/user', tags=["Register"])
 app.include_router(user_protected_router, prefix='/api/user', tags=["User"])
 app.include_router(address_router, prefix='/api/addresses', tags=["Address"])
