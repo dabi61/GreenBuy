@@ -21,7 +21,7 @@ from api.cart.routing import router as cart_router
 from api.order.routing import router as order_router
 from api.attribute.routing import router as attribute_router
 from api.chat.routing import router as chat_router
-
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -61,6 +61,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.get("/healthz")
 def health_check():
     return {"status": "ok"}
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/docs")
 
 #login
 @app.post("/token", response_model=Token)
