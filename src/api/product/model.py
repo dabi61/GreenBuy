@@ -20,3 +20,4 @@ class Product(SQLModel, table=True):
     sub_category: Optional["SubCategory"] = Relationship(back_populates="products")
     attributes: List["Attribute"] = Relationship(back_populates="product")
     approver: Optional["User"] = Relationship(back_populates="approved_product", sa_relationship_kwargs={"uselist": False})
+    cart_items: List["CartItem"] = Relationship(back_populates="product")

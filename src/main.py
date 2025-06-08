@@ -17,8 +17,10 @@ from api.shop.routing import router as shop_router
 from api.category.routing import router as category_router
 from api.sub_category.routing import router as sub_category_router
 from api.product.routing import router as product_router
-
-
+from api.cart.routing import router as cart_router
+from api.order.routing import router as order_router
+from api.attribute.routing import router as attribute_router
+from api.chat.routing import router as chat_router
 
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -48,6 +50,10 @@ app.include_router(shop_router, prefix='/api/shops', tags=["Shop"])
 app.include_router(category_router, prefix='/api/category', tags=["Category"])
 app.include_router(sub_category_router, prefix='/api/sub_category', tags=["SubCategory"])
 app.include_router(product_router, prefix='/api/product', tags=["Product"])
+app.include_router(cart_router, prefix='/api/cart', tags=["Cart"])
+app.include_router(order_router, prefix='/api/order', tags=["Order"])
+app.include_router(attribute_router, prefix='/api/Attribute', tags=["Attribute"])
+app.include_router(chat_router, prefix='/api/chat', tags=["Chat"])
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 

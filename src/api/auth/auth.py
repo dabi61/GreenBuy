@@ -15,7 +15,7 @@ from api.auth.auth_utils import hash_password, verify_password, oauth_scheme
 
 SECRET_KEY = "3f919b7c30efa3a7468bb868190f54376a68b8eb1a014647d50af4cd077b7c76"
 ALGOGRYTHYM = "HS256"
-EXPIRE_TIME = 1
+EXPIRE_TIME = 30
 
 oauth_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 

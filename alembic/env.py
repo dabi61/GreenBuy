@@ -9,7 +9,14 @@ from sqlalchemy import pool
 from alembic import context
 
 from api.user.model import SQLModel  # hoặc src.api.user.model nếu cần
-
+from api.shop.model import Shop
+from api.attribute.model import Attribute
+from api.address.model import Address
+from api.cart.model import Cart, CartItem
+from api.category.model import Category
+from api.order.model import Order, OrderItem
+from api.sub_category.model import SubCategory
+from api.chat.model import ChatRoom, ChatMessage
 target_metadata = SQLModel.metadata
 
 

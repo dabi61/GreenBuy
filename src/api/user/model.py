@@ -30,8 +30,9 @@ class User(SQLModel, table=True):
     role: UserRole =  Field(default=UserRole.buyer)
     create_at: datetime = Field(default_factory=datetime.utcnow)
     addresses: list["Address"] = Relationship(back_populates="user")
-    shop: Optional["Shop"] = Relationship(back_populates="user") # Quan hệ 1-1 với Shop
     approved_product: Optional["Product"] = Relationship(back_populates="approver")
+    cart: Optional["Cart"] = Relationship(back_populates="user", sa_relationship_kwargs={"uselist": False})
+    shop: Optional["Shop"] = Relationship(back_populates="user", sa_relationship_kwargs={"uselist": False}) # Quan hệ 1-1 với Shop
 
 
 class UserUpdateResponse(BaseModel):
