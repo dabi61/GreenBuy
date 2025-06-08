@@ -5,7 +5,7 @@ from api.db.session import get_session
 from api.user.utils import getUserFromDb
 from api.auth.auth_utils import hash_password, oauth_scheme
 from .model import RegisterUser, User, UpdateUser
-import os
+import re
 from api.db.config import DATABASE_URL
 from .model import (
     get_utc_now
