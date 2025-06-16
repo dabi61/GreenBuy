@@ -8,7 +8,7 @@ from api.user.utils import getUserFromDb
 from api.auth.auth_utils import hash_password, oauth_scheme
 import os
 from api.db.config import DATABASE_URL 
-from api.auth.auth import SECRET_KEY, ALGOGRYTHYM
+from api.auth.constants import SECRET_KEY, ALGOGRYTHYM
 
 
 

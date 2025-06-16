@@ -6,7 +6,8 @@ from api.auth.scheme import TokenData
 from jose import jwt, JWTError, ExpiredSignatureError
 from api.auth.auth_utils import oauth_scheme
 from api.user.utils import getUserFromDb
-from api.auth.auth import SECRET_KEY, ALGOGRYTHYM
+from api.auth.constants import SECRET_KEY, ALGOGRYTHYM
+from api.auth.token_blacklist import is_token_blacklisted
 
 def get_current_user(
     token: Annotated[str, Depends(oauth_scheme)],
@@ -15,8 +16,16 @@ def get_current_user(
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired token. Please log in again.",
-        headers={"WWW-Authenticate": "Bearer"},  # ✅ Đúng header
+        headers={"WWW-Authenticate": "Bearer"},
     )
+
+    # Kiểm tra token có trong blacklist không (đã logout)
+    if is_token_blacklisted(token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGOGRYTHYM])

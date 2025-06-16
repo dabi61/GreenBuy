@@ -73,12 +73,17 @@ def change_user_role(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Session = Depends(get_session),
 ):
-    # Chỉ cho phép đổi từ buyer sang seller hoặc approve
-    if current_user.role != UserRole.buyer:
-        raise HTTPException(status_code=400, detail="Role can only be changed if current role is 'buyer'.")
-
-    if request.new_role not in [UserRole.seller, UserRole.approve]:
-        raise HTTPException(status_code=400, detail="Can only change to 'seller' or 'approve'.")
+    # Logic phân quyền thay đổi role
+    if current_user.role == UserRole.buyer:
+        # Buyer chỉ có thể đổi thành seller hoặc approve
+        if request.new_role not in [UserRole.seller, UserRole.approve]:
+            raise HTTPException(status_code=400, detail="Buyer can only change to 'seller' or 'approve'.")
+    elif current_user.role == UserRole.admin:
+        # Admin có thể đổi thành bất kỳ role nào
+        pass
+    else:
+        # Seller và approver không thể tự đổi role
+        raise HTTPException(status_code=400, detail="You cannot change your current role.")
 
     user = session.exec(select(User).where(User.id == current_user.id)).first()
     if not user:

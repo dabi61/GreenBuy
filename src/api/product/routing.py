@@ -5,14 +5,20 @@ from typing import List, Annotated
 from .model import Product
 from .scheme import ProductRead
 from api.auth.dependency import get_current_user
+from api.auth.permission import require_seller_or_approver, ensure_resource_access, require_approver
 from api.auth.auth import get_session
 from api.shop.model import Shop
 from api.user.model import User
 from api.attribute.model import Attribute
+from pydantic import BaseModel
 import uuid
 
 
 router = APIRouter()
+
+class ProductApprovalRequest(BaseModel):
+    approved: bool
+    approval_note: str = None
 
 # 📄 Read all
 @router.get("/", response_model=List[ProductRead])
@@ -30,7 +36,7 @@ def get_product(product_id: int, session: Session = Depends(get_session)):
 
 @router.post("/", response_model=ProductRead)
 async def create_product(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_seller_or_approver)],
     session: Session = Depends(get_session),
     name: str = Form(...),
     description: str = Form(None),
@@ -38,9 +44,6 @@ async def create_product(
     sub_category_id: int = Form(...),
     cover: UploadFile = File(None),
 ):
-    # Check quyền
-    if current_user.role not in ["seller", "approve"]:
-        raise HTTPException(403, detail="Not allowed")
 
     # Lấy shop từ user
     shop = session.exec(select(Shop).where(Shop.user_id == current_user.id)).first()
@@ -89,10 +92,13 @@ async def update_product(
     if not product:
         raise HTTPException(404, detail="Product not found")
 
-    # Kiểm tra quyền
-    shop = session.exec(select(Shop).where(Shop.user_id == current_user.id)).first()
-    if not shop or shop.id != product.shop_id:
-        raise HTTPException(403, detail="You don't own this product")
+    # Kiểm tra quyền sở hữu qua shop
+    shop = session.exec(select(Shop).where(Shop.id == product.shop_id)).first()
+    if not shop:
+        raise HTTPException(404, detail="Shop not found")
+    
+    # Kiểm tra user có quyền sửa product này không (owner hoặc approver)
+    ensure_resource_access(current_user, shop.user_id, "product")
 
     # Cập nhật các trường
     if name is not None:
@@ -121,6 +127,38 @@ async def update_product(
     session.refresh(product)
     return product
 
+@router.patch("/{product_id}/approve", response_model=ProductRead)
+def approve_product(
+    product_id: int,
+    approval_request: ProductApprovalRequest,
+    current_user: Annotated[User, Depends(require_approver)],
+    session: Session = Depends(get_session),
+):
+    """Approve hoặc reject product (chỉ dành cho approver)"""
+    product = session.get(Product, product_id)
+    if not product:
+        raise HTTPException(404, detail="Product not found")
+
+    # Cập nhật trạng thái approval
+    product.is_approved = approval_request.approved
+    product.approval_note = approval_request.approval_note
+    product.approver_id = current_user.id
+
+    session.add(product)
+    session.commit()
+    session.refresh(product)
+    return product
+
+@router.get("/pending-approval", response_model=List[ProductRead])
+def get_pending_products(
+    current_user: Annotated[User, Depends(require_approver)],
+    session: Session = Depends(get_session),
+):
+    """Lấy danh sách product chưa được approve (chỉ dành cho approver)"""
+    products = session.exec(
+        select(Product).where(Product.is_approved == None)
+    ).all()
+    return products
 
 @router.get("/shop/{shop_id}", response_model=List[ProductRead])
 def get_products_by_shop(shop_id: int, session: Session = Depends(get_session)):

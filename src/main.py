@@ -4,14 +4,21 @@ from api.events import router as event_router
 from api.user import router as user_router
 from contextlib import asynccontextmanager
 from api.db.session import init_db, get_session
-from api.auth.auth import authenticate_user, create_access_token, EXPIRE_TIME, validate_refresh_token
+from api.auth.auth import authenticate_user, create_access_token, validate_refresh_token
+from api.auth.constants import EXPIRE_TIME
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from typing import Annotated
 from fastapi import Depends, HTTPException
 from sqlmodel import Session
 from datetime import timedelta
 from api.user.scheme import Token, RefreshRequest
+from api.auth.token_blacklist import add_token_to_blacklist
+from api.auth.dependency import get_current_user
+from api.user.model import User
+from api.auth.cleanup_task import start_background_tasks
 from api.user.protected_routing import router as user_protected_router
+from api.user.admin_routing import router as admin_router
+from api.chat.connection_manager import connection_manager
 from api.address.routing import router as address_router
 from api.shop.routing import router as shop_router
 from api.category.routing import router as category_router
@@ -30,8 +37,13 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 async def lifespan( app:FastAPI):
     #before app startup up
     init_db()
+    # Khởi động background tasks
+    start_background_tasks()
+    # Khởi động chat connection manager
+    await connection_manager.start_background_tasks()
     yield
     #clean up
+    await connection_manager.stop_background_tasks()
 
 app = FastAPI(lifespan=lifespan,
             title="GreenBuy API",
@@ -54,6 +66,7 @@ app.add_middleware(
 # app.include_router(event_router, prefix='/api/events', tags=["Events"]) #/api/events
 app.include_router(user_router, prefix='/api/user', tags=["Register"])
 app.include_router(user_protected_router, prefix='/api/user', tags=["User"])
+app.include_router(admin_router, prefix='/api/admin', tags=["Admin"])
 app.include_router(address_router, prefix='/api/addresses', tags=["Address"])
 app.include_router(shop_router, prefix='/api/shops', tags=["Shop"])
 app.include_router(category_router, prefix='/api/category', tags=["Category"])
@@ -89,6 +102,38 @@ async def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     refresh_token = create_access_token({"sub": user.email}, refresh_expire_time)
 
     return Token(access_token=access_token, token_type="bearer", refresh_token=refresh_token)
+
+@app.post("/logout")
+def logout(
+    current_user: Annotated[User, Depends(get_current_user)],
+    token: Annotated[str, Depends(oauth2_scheme)]
+):
+    """
+    Logout user bằng cách thêm token vào blacklist
+    """
+    # Thêm access token vào blacklist
+    add_token_to_blacklist(token)
+    
+    return {"message": "Successfully logged out"}
+
+@app.post("/logout-all")
+def logout_all_devices(
+    current_user: Annotated[User, Depends(get_current_user)],
+    request: RefreshRequest,
+    token: Annotated[str, Depends(oauth2_scheme)]
+):
+    """
+    Logout khỏi tất cả devices bằng cách blacklist cả access và refresh token
+    """
+    # Thêm access token vào blacklist
+    add_token_to_blacklist(token)
+    
+    # Thêm refresh token vào blacklist
+    refresh_token = request.old_refresh_data
+    if refresh_token:
+        add_token_to_blacklist(refresh_token)
+    
+    return {"message": "Successfully logged out from all devices"}
 
 @app.post("/token/refresh")
 def refresh_token(request: RefreshRequest,

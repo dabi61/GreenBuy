@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 from datetime import datetime
 from api.auth.auth import get_session
 from api.auth.dependency import get_current_user
+from api.auth.permission import require_seller
 from api.user.model import User
 from api.shop.model import Shop
 from api.shop.scheme import ShopRead, AddressRead
@@ -14,10 +15,10 @@ from api.address.model import Address
 router = APIRouter()
 
 
-# Tạo shop mới cho user hiện tại
+# Tạo shop mới cho user hiện tại (chỉ seller)
 @router.post("", response_model=Shop)
 async def create_shop(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_seller)],
     session: Session = Depends(get_session),
 
     name: str = Form(...),
