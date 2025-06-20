@@ -1,6 +1,10 @@
 from sqlmodel import SQLModel, Field, Relationship
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from datetime import datetime
+
+# Forward references to avoid circular imports
+if TYPE_CHECKING:
+    from api.product.model import Product
 
 class Attribute(SQLModel, table=True):
     attribute_id: Optional[int] = Field(default=None, primary_key=True)
@@ -10,7 +14,8 @@ class Attribute(SQLModel, table=True):
     size: Optional[str] = None
     price: float
     image: Optional[str] = None
-    quantity: int = Field(default=1)  # 👈 Thêm dòng này
+    quantity: int = Field(default=1)
     create_at: datetime = Field(default_factory=datetime.utcnow)
 
-    product: Optional["Product"] = Relationship(back_populates="attributes")
+    # Relationships using TYPE_CHECKING
+    product: Optional["Product"] = Relationship(back_populates="attributes") 

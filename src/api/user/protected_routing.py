@@ -76,7 +76,7 @@ def change_user_role(
     # Logic phân quyền thay đổi role
     if current_user.role == UserRole.buyer:
         # Buyer chỉ có thể đổi thành seller hoặc approve
-        if request.new_role not in [UserRole.seller, UserRole.approve]:
+        if request.new_role not in [UserRole.seller, UserRole.moderator]:
             raise HTTPException(status_code=400, detail="Buyer can only change to 'seller' or 'approve'.")
     elif current_user.role == UserRole.admin:
         # Admin có thể đổi thành bất kỳ role nào

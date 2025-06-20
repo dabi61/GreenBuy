@@ -38,7 +38,7 @@ def require_seller(current_user: Annotated[User, Depends(get_current_user)]):
 
 def require_approver(current_user: Annotated[User, Depends(get_current_user)]):
     """Dependency yêu cầu role approver"""
-    if current_user.role != UserRole.approve:
+    if current_user.role != UserRole.moderator:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Approver role required."
@@ -47,7 +47,7 @@ def require_approver(current_user: Annotated[User, Depends(get_current_user)]):
 
 def require_seller_or_approver(current_user: Annotated[User, Depends(get_current_user)]):
     """Dependency yêu cầu role seller hoặc approver"""
-    if current_user.role not in [UserRole.seller, UserRole.approve]:
+    if current_user.role not in [UserRole.seller, UserRole.moderator]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Seller or Approver role required."
@@ -65,7 +65,7 @@ def require_admin(current_user: Annotated[User, Depends(get_current_user)]):
 
 def require_admin_or_approver(current_user: Annotated[User, Depends(get_current_user)]):
     """Dependency yêu cầu role admin hoặc approver"""
-    if current_user.role not in [UserRole.admin, UserRole.approve]:
+    if current_user.role not in [UserRole.admin, UserRole.moderator]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied. Admin or Approver role required."
@@ -81,7 +81,7 @@ def require_owner_or_approver(resource_user_id: int):
         resource_user_id: ID của user sở hữu resource
     """
     def owner_checker(current_user: Annotated[User, Depends(get_current_user)]):
-        if current_user.id != resource_user_id and current_user.role != UserRole.approve:
+        if current_user.id != resource_user_id and current_user.role != UserRole.moderator:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied. You can only access your own resources or you need approver role."
@@ -245,7 +245,7 @@ def check_resource_ownership(current_user: User, resource_user_id: int) -> bool:
         return True
     
     # Approver có quyền truy cập tất cả
-    if current_user.role == UserRole.approve:
+    if current_user.role == UserRole.moderator:
         return True
     
     return False

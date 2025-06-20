@@ -28,6 +28,9 @@ from api.cart.routing import router as cart_router
 from api.order.routing import router as order_router
 from api.attribute.routing import router as attribute_router
 from api.chat.routing import router as chat_router
+# Payment imports 
+from api.payment.routing import router as payment_router  
+from api.payment.model import Payment, PaymentMethod, RefundRequest  # Import để SQLModel biết về models
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -76,6 +79,7 @@ app.include_router(cart_router, prefix='/api/cart', tags=["Cart"])
 app.include_router(order_router, prefix='/api/order', tags=["Order"])
 app.include_router(attribute_router, prefix='/api/attribute', tags=["Attribute"])
 app.include_router(chat_router, prefix='/api/chat', tags=["Chat"])
+app.include_router(payment_router, prefix='/api/payment', tags=["Payment"])
 
 
 

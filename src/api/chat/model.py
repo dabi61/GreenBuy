@@ -16,9 +16,11 @@ class MessageStatus(str, Enum):
     read = "read"
 
 class ChatRoom(SQLModel, table=True):
+    __tablename__ = "chat_rooms"
+    
     id: Optional[int] = Field(default=None, primary_key=True)
-    user1_id: int = Field(foreign_key="user.id")
-    user2_id: int = Field(foreign_key="user.id")
+    user1_id: int = Field(foreign_key="users.id")
+    user2_id: int = Field(foreign_key="users.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     is_active: bool = Field(default=True)
@@ -27,15 +29,14 @@ class ChatRoom(SQLModel, table=True):
     last_activity: datetime = Field(default_factory=datetime.utcnow)
     
     # Chỉ định rõ foreign key để tránh ambiguous
-    messages: List["ChatMessage"] = Relationship(
-        back_populates="room",
-        sa_relationship_kwargs={"foreign_keys": "[ChatMessage.room_id]"}
-    )
+    messages: List["ChatMessage"] = Relationship(back_populates="room")
 
 class ChatMessage(SQLModel, table=True):
+    __tablename__ = "chat_messages"
+    
     id: Optional[int] = Field(default=None, primary_key=True)
-    room_id: int = Field(foreign_key="chatroom.id")
-    sender_id: int = Field(foreign_key="user.id")
+    room_id: int = Field(foreign_key="chat_rooms.id")
+    sender_id: int = Field(foreign_key="users.id")
     content: str
     type: MessageType = Field(default=MessageType.text)
     status: MessageStatus = Field(default=MessageStatus.sent)
@@ -54,14 +55,11 @@ class ChatMessage(SQLModel, table=True):
     is_deleted: bool = Field(default=False)
     deleted_at: Optional[datetime] = None
     
-    room: Optional["ChatRoom"] = Relationship(
-        back_populates="messages",
-        sa_relationship_kwargs={"foreign_keys": "[ChatMessage.room_id]"}
-    )
+    room: Optional["ChatRoom"] = Relationship(back_populates="messages")
 
 class OnlineStatus(SQLModel, table=True):
     """Track user online status for chat"""
-    user_id: int = Field(primary_key=True, foreign_key="user.id")
+    user_id: int = Field(primary_key=True, foreign_key="users.id")
     is_online: bool = Field(default=False)
     last_seen: datetime = Field(default_factory=datetime.utcnow)
     device_info: Optional[str] = None  # Device identifier for mobile

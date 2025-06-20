@@ -29,7 +29,7 @@ def authenticate_user(username,
     db_user = getUserFromDb(session, username = username)
     if not db_user:
         return False
-    if not verify_password(password = password, hash_password = db_user.password):
+    if not verify_password(password = password, hash_password = db_user.password_hash):
         return False
     return db_user
 

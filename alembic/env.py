@@ -8,7 +8,9 @@ from sqlalchemy import pool
 
 from alembic import context
 
-from api.user.model import SQLModel  # hoặc src.api.user.model nếu cần
+# Import only models, not routers to avoid dependency issues
+from sqlmodel import SQLModel
+from api.user.model import User
 from api.shop.model import Shop
 from api.attribute.model import Attribute
 from api.address.model import Address
@@ -17,6 +19,8 @@ from api.category.model import Category
 from api.order.model import Order, OrderItem
 from api.sub_category.model import SubCategory
 from api.chat.model import ChatRoom, ChatMessage
+from api.payment.model import Payment, PaymentMethod, RefundRequest
+from api.product.model import Product
 target_metadata = SQLModel.metadata
 
 

@@ -12,7 +12,13 @@ engine = sqlmodel.create_engine(DATABASE_URL)
 
 def init_db():
     print("creating database")
-    SQLModel.metadata.create_all(engine)
+    try:
+        # Chỉ tạo tables mới, không tạo lại tables đã tồn tại
+        SQLModel.metadata.create_all(engine, checkfirst=True)
+        print("Database tables created successfully")
+    except Exception as e:
+        print(f"Warning: Some tables might already exist. Error: {e}")
+        # Không raise error, để app có thể tiếp tục chạy
 
 
 
