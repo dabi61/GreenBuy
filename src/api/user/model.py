@@ -29,15 +29,26 @@ class User(SQLModel, table=True):
     avatar: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
-    username: Optional[str]
+    username: Optional[str] = None
     email: str
     password_hash: str  # Fix: Match database schema
     birth_date: Optional[datetime] = None  # Fix: Match database schema
     phone_number: Optional[str] = None
-    is_active: Optional[bool] = True
-    is_online: Optional[bool] = False
+    bio: Optional[str] = None  # Add missing field
+    is_active: bool = Field(default=True)  # Required field
+    is_online: bool = Field(default=False)  # Required field
+    is_verified: bool = Field(default=False)  # Required field
+    last_login: Optional[datetime] = None  # Add missing field
     role: UserRole = Field(default=UserRole.buyer)
-    created_at: datetime = Field(default_factory=datetime.utcnow)  # Fix: Match database schema
+    created_at: datetime = Field(default_factory=datetime.utcnow)  # Required field
+    updated_at: datetime = Field(default_factory=datetime.utcnow)  # Required field
+    failed_login_attempts: int = Field(default=0)  # Required field
+    locked_until: Optional[datetime] = None  # Add missing field
+    password_changed_at: Optional[datetime] = None  # Add missing field
+    email_verification_token: Optional[str] = None  # Add missing field
+    email_verified_at: Optional[datetime] = None  # Add missing field
+    password_reset_token: Optional[str] = None  # Add missing field
+    password_reset_expires: Optional[datetime] = None  # Add missing field
     
     # Re-enable all relationships
     addresses: List["Address"] = Relationship(back_populates="user")
