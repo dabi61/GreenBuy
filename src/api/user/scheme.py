@@ -20,7 +20,7 @@ class UserRead(SQLModel):
 
 
 
-#Field(foreign_key="user.id")
+
 class RegisterUser(BaseModel):
     username: Annotated[
         str,

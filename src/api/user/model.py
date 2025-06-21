@@ -125,4 +125,4 @@ class UpdateUser(SQLModel):
     last_name: str
     email: str
     birth_of_date: datetime
-    phone_number: str 
+    phone_number: str
