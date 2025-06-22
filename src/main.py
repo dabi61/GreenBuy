@@ -18,6 +18,7 @@ from api.user.model import User
 from api.auth.cleanup_task import start_background_tasks
 from api.user.protected_routing import router as user_protected_router
 from api.user.admin_routing import router as admin_router
+from api.user.social_routing import router as social_router
 from api.chat.connection_manager import connection_manager
 from api.address.routing import router as address_router
 from api.shop.routing import router as shop_router
@@ -69,6 +70,7 @@ app.add_middleware(
 # app.include_router(event_router, prefix='/api/events', tags=["Events"]) #/api/events
 app.include_router(user_router, prefix='/api/user', tags=["Register"])
 app.include_router(user_protected_router, prefix='/api/user', tags=["User"])
+app.include_router(social_router, prefix='/api/user', tags=["Social"])
 app.include_router(admin_router, prefix='/api/admin', tags=["Admin"])
 app.include_router(address_router, prefix='/api/addresses', tags=["Address"])
 app.include_router(shop_router, prefix='/api/shops', tags=["Shop"])

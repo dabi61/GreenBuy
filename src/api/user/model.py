@@ -126,3 +126,155 @@ class UpdateUser(SQLModel):
     email: str
     birth_of_date: datetime
     phone_number: str
+
+# =========================
+# FOLLOW MODELS
+# =========================
+
+class UserFollow(SQLModel, table=True):
+    """Model cho việc user theo dõi user khác"""
+    __tablename__ = "user_follows"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    follower_id: int = Field(foreign_key="users.id")  # Người theo dõi
+    following_id: int = Field(foreign_key="users.id")  # Người được theo dõi
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    follower: "User" = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "UserFollow.follower_id"}
+    )
+    following: "User" = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "UserFollow.following_id"}
+    )
+
+class ShopFollow(SQLModel, table=True):
+    """Model cho việc user theo dõi shop"""
+    __tablename__ = "shop_follows"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id")  # Người theo dõi
+    shop_id: int = Field(foreign_key="shop.id")  # Shop được theo dõi
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+# =========================
+# RATING MODELS
+# =========================
+
+class UserRating(SQLModel, table=True):
+    """Model cho việc đánh giá user"""
+    __tablename__ = "user_ratings"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    rater_id: int = Field(foreign_key="users.id")  # Người đánh giá
+    rated_user_id: int = Field(foreign_key="users.id")  # Người được đánh giá
+    rating: int = Field(ge=1, le=5)  # Điểm từ 1-5
+    comment: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    # Relationships
+    rater: "User" = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "UserRating.rater_id"}
+    )
+    rated_user: "User" = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "UserRating.rated_user_id"}
+    )
+
+class ShopRating(SQLModel, table=True):
+    """Model cho việc đánh giá shop"""
+    __tablename__ = "shop_ratings"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id")  # Người đánh giá
+    shop_id: int = Field(foreign_key="shop.id")  # Shop được đánh giá
+    rating: int = Field(ge=1, le=5)  # Điểm từ 1-5
+    comment: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+# =========================
+# PYDANTIC SCHEMAS
+# =========================
+
+class FollowUserRequest(BaseModel):
+    """Schema cho việc follow user"""
+    following_id: int
+
+class FollowShopRequest(BaseModel):
+    """Schema cho việc follow shop"""
+    shop_id: int
+
+class RateUserRequest(BaseModel):
+    """Schema cho việc đánh giá user"""
+    rated_user_id: int
+    rating: int = Field(ge=1, le=5)
+    comment: Optional[str] = None
+
+class RateShopRequest(BaseModel):
+    """Schema cho việc đánh giá shop"""
+    shop_id: int
+    rating: int = Field(ge=1, le=5)
+    comment: Optional[str] = None
+
+class UserFollowResponse(BaseModel):
+    """Response cho user follow"""
+    id: int
+    follower_id: int
+    following_id: int
+    created_at: datetime
+    
+    # User info
+    follower_username: Optional[str] = None
+    following_username: Optional[str] = None
+
+class ShopFollowResponse(BaseModel):
+    """Response cho shop follow"""
+    id: int
+    user_id: int
+    shop_id: int
+    created_at: datetime
+    
+    # Shop info
+    shop_name: Optional[str] = None
+
+class UserRatingResponse(BaseModel):
+    """Response cho user rating"""
+    id: int
+    rater_id: int
+    rated_user_id: int
+    rating: int
+    comment: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    
+    # User info
+    rater_username: Optional[str] = None
+    rated_user_username: Optional[str] = None
+
+class ShopRatingResponse(BaseModel):
+    """Response cho shop rating"""
+    id: int
+    user_id: int
+    shop_id: int
+    rating: int
+    comment: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    
+    # Additional info
+    user_username: Optional[str] = None
+    shop_name: Optional[str] = None
+
+class FollowStatsResponse(BaseModel):
+    """Thống kê follow của user"""
+    followers_count: int
+    following_count: int
+    shop_following_count: int
+    my_shop_followers_count: int  # Số người follow shop của mình
+
+class RatingStatsResponse(BaseModel):
+    """Thống kê rating của user/shop"""
+    total_ratings: int
+    average_rating: float
+    rating_breakdown: dict  # {1: 0, 2: 1, 3: 2, 4: 5, 5: 10}

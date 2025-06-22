@@ -49,7 +49,7 @@ class ChatMessage(SQLModel, table=True):
     duration: Optional[int] = None  # Thời lượng voice message (seconds)
     latitude: Optional[float] = None  # Cho location message
     longitude: Optional[float] = None  # Cho location message
-    reply_to_id: Optional[int] = Field(default=None, foreign_key="chatmessage.id")  # Reply to message
+    reply_to_id: Optional[int] = Field(default=None, foreign_key="chat_messages.id")  # Reply to message
     is_edited: bool = Field(default=False)
     edited_at: Optional[datetime] = None
     is_deleted: bool = Field(default=False)
