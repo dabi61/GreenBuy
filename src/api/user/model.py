@@ -105,7 +105,7 @@ class UserUpdateResponse(BaseModel):
     first_name: Optional[str]
     last_name: Optional[str]
     phone_number: Optional[str]
-    birth_of_date: Optional[datetime]
+    birth_date: Optional[datetime]
 
     class Config:
         from_attributes = True
@@ -124,7 +124,7 @@ class UpdateUser(SQLModel):
     first_name: str
     last_name: str
     email: str
-    birth_of_date: datetime
+    birth_date: datetime
     phone_number: str
 
 # =========================

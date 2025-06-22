@@ -10,7 +10,26 @@ router = APIRouter()
 
 @router.get("/me")
 async def user_profile(current_user: Annotated[User, Depends(get_current_user)]):
-    return {"user": current_user}
+    """Lấy thông tin profile của user hiện tại"""
+    return {
+        "user": {
+            "id": current_user.id,
+            "username": current_user.username,
+            "email": current_user.email,
+            "first_name": current_user.first_name,
+            "last_name": current_user.last_name,
+            "avatar": current_user.avatar,
+            "phone_number": current_user.phone_number,
+            "birth_date": current_user.birth_date.isoformat() if current_user.birth_date else None,
+            "bio": current_user.bio,
+            "role": current_user.role,
+            "is_active": current_user.is_active,
+            "is_online": current_user.is_online,
+            "is_verified": current_user.is_verified,
+            "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+            "updated_at": current_user.updated_at.isoformat() if current_user.updated_at else None
+        }
+    }
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 from sqlmodel import Session, select
@@ -18,7 +37,7 @@ from typing import Annotated
 from datetime import datetime
 import os
 
-@router.put("/me", response_model=UserUpdateResponse)  # hoặc một Pydantic schema nhẹ hơn nếu muốn
+@router.put("/me", response_model=UserUpdateResponse)
 async def update_info(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Session = Depends(get_session),
@@ -26,12 +45,19 @@ async def update_info(
     # File avatar (tuỳ chọn)
     avatar: UploadFile = File(None),
 
-    # Các field cập nhật khác (tuỳ chọn, có thể mở rộng thêm tuỳ ý)
+    # Các field cập nhật khác (tuỳ chọn)
     first_name: str = Form(None),
     last_name: str = Form(None),
     phone_number: str = Form(None),
-    birth_of_date: str = Form(None),  # truyền string, sẽ convert sang datetime
+    birth_date: str = Form(None),  # Format: YYYY-MM-DD hoặc YYYY-MM-DDTHH:MM:SS
 ):
+    """
+    Cập nhật thông tin user.
+    
+    birth_date format: 
+    - YYYY-MM-DD (ví dụ: 1990-05-15)
+    - YYYY-MM-DDTHH:MM:SS (ví dụ: 1990-05-15T00:00:00)
+    """
     user = session.exec(select(User).where(User.id == current_user.id)).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -55,11 +81,20 @@ async def update_info(
         user.last_name = last_name
     if phone_number is not None:
         user.phone_number = phone_number
-    if birth_of_date:
+    if birth_date:
         try:
-            user.birth_of_date = datetime.fromisoformat(birth_of_date)
+            # Hỗ trợ multiple formats
+            if 'T' in birth_date:
+                # Full ISO format: 1990-05-15T00:00:00
+                user.birth_date = datetime.fromisoformat(birth_date)
+            else:
+                # Date only format: 1990-05-15
+                user.birth_date = datetime.strptime(birth_date, '%Y-%m-%d')
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid birth_of_date format (must be ISO 8601)")
+            raise HTTPException(
+                status_code=400, 
+                detail="Invalid birth_date format. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS"
+            )
 
     session.commit()
     session.refresh(user)
