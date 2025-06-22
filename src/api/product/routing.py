@@ -154,6 +154,97 @@ def get_pending_products(
     ).all()
     return products
 
+# 📈 Get trending products (must be before /{product_id})
+@router.get("/trending", response_model=dict)
+def get_trending_products(
+    page: int = 1,
+    limit: int = 10,
+    session: Session = Depends(get_session)
+):
+    """
+    Lấy sản phẩm trending (dựa trên ngày tạo gần đây)
+    """
+    from sqlmodel import func
+    
+    # Count total trending products
+    count_query = select(func.count(Product.product_id)).where(Product.is_approved == True)
+    total = session.exec(count_query).one()
+    
+    # Query products by latest created
+    query = (
+        select(Product)
+        .where(Product.is_approved == True)
+        .order_by(Product.create_at.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
+    
+    products = session.exec(query).all()
+    
+    # Calculate pagination metadata
+    total_pages = (total + limit - 1) // limit
+    has_next = page < total_pages
+    has_prev = page > 1
+    
+    # Convert to dict
+    items = []
+    for product in products:
+        items.append({
+            "product_id": product.product_id,
+            "name": product.name,
+            "description": product.description,
+            "price": product.price,
+            "cover": product.cover,
+            "shop_id": product.shop_id,
+            "sub_category_id": product.sub_category_id,
+            "create_at": product.create_at.isoformat() if product.create_at else None
+        })
+    
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages,
+        "has_next": has_next,
+        "has_prev": has_prev
+    }
+
+# ⭐ Get featured products (must be before /{product_id})
+@router.get("/featured", response_model=dict)
+def get_featured_products(
+    limit: int = 8,
+    session: Session = Depends(get_session)
+):
+    """
+    Lấy sản phẩm nổi bật cho homepage mobile
+    """
+    products = session.exec(
+        select(Product)
+        .where(Product.is_approved == True)
+        .order_by(Product.create_at.desc())
+        .limit(limit)
+    ).all()
+    
+    # Convert to dict
+    items = []
+    for product in products:
+        items.append({
+            "product_id": product.product_id,
+            "name": product.name,
+            "description": product.description,
+            "price": product.price,
+            "cover": product.cover,
+            "shop_id": product.shop_id,
+            "sub_category_id": product.sub_category_id,
+            "create_at": product.create_at.isoformat() if product.create_at else None
+        })
+    
+    return {
+        "items": items,
+        "count": len(items)
+    }
+
 # 🔍 Read by ID
 @router.get("/{product_id}", response_model=ProductRead)
 def get_product(product_id: int, session: Session = Depends(get_session)):
@@ -289,94 +380,7 @@ def get_products_by_shop(shop_id: int, session: Session = Depends(get_session)):
 
     return products
 
-@router.get("/trending", response_model=dict)
-def get_trending_products(
-    page: int = 1,
-    limit: int = 10,
-    session: Session = Depends(get_session)
-):
-    """
-    Lấy sản phẩm trending (dựa trên ngày tạo gần đây)
-    """
-    from sqlmodel import func
-    
-    # Count total trending products
-    count_query = select(func.count(Product.product_id)).where(Product.is_approved == True)
-    total = session.exec(count_query).one()
-    
-    # Query products by latest created
-    query = (
-        select(Product)
-        .where(Product.is_approved == True)
-        .order_by(Product.create_at.desc())
-        .offset((page - 1) * limit)
-        .limit(limit)
-    )
-    
-    products = session.exec(query).all()
-    
-    # Calculate pagination metadata
-    total_pages = (total + limit - 1) // limit
-    has_next = page < total_pages
-    has_prev = page > 1
-    
-    # Convert to dict
-    items = []
-    for product in products:
-        items.append({
-            "product_id": product.product_id,
-            "name": product.name,
-            "description": product.description,
-            "price": product.price,
-            "cover": product.cover,
-            "shop_id": product.shop_id,
-            "sub_category_id": product.sub_category_id,
-            "create_at": product.create_at.isoformat() if product.create_at else None
-        })
-    
-    return {
-        "items": items,
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "total_pages": total_pages,
-        "has_next": has_next,
-        "has_prev": has_prev
-    }
 
-@router.get("/featured", response_model=dict)
-def get_featured_products(
-    limit: int = 8,
-    session: Session = Depends(get_session)
-):
-    """
-    Lấy sản phẩm nổi bật cho homepage mobile
-    """
-    products = session.exec(
-        select(Product)
-        .where(Product.is_approved == True)
-        .order_by(Product.create_at.desc())
-        .limit(limit)
-    ).all()
-    
-    # Convert to dict
-    items = []
-    for product in products:
-        items.append({
-            "product_id": product.product_id,
-            "name": product.name,
-            "description": product.description,
-            "price": product.price,
-            "cover": product.cover,
-            "shop_id": product.shop_id,
-            "sub_category_id": product.sub_category_id,
-            "create_at": product.create_at.isoformat() if product.create_at else None
-        })
-    
-    return {
-        "items": items,
-        "count": len(items)
-    }
 
 @router.get("/categories/{category_id}/products", response_model=dict)
 def get_products_by_category(
