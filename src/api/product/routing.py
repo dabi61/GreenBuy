@@ -368,17 +368,96 @@ def approve_product(
     session.refresh(product)
     return product
 
-@router.get("/shop/{shop_id}", response_model=List[ProductRead])
-def get_products_by_shop(shop_id: int, session: Session = Depends(get_session)):
+@router.get("/shop/{shop_id}", response_model=dict)
+def get_products_by_shop(
+    shop_id: int, 
+    page: int = 1,
+    limit: int = 10,
+    sort_by: Optional[str] = "created_at",  # name, price, created_at
+    sort_order: str = "desc",  # asc, desc
+    approved_only: bool = True,
+    session: Session = Depends(get_session)
+):
+    """
+    Lấy danh sách sản phẩm theo shop với phân trang và filtering
+    """
+    from sqlmodel import and_, func
+    
     shop = session.get(Shop, shop_id)
     if not shop:
         raise HTTPException(status_code=404, detail="Shop not found")
 
-    products = session.exec(
-        select(Product).where(Product.shop_id == shop_id)
-    ).all()
-
-    return products
+    # Tạo base query
+    query = select(Product).where(Product.shop_id == shop_id)
+    
+    # Apply filters
+    filters = [Product.shop_id == shop_id]
+    
+    if approved_only:
+        filters.append(Product.is_approved == True)
+    
+    if filters:
+        query = query.where(and_(*filters))
+    
+    # Count total items
+    count_query = select(func.count(Product.product_id))
+    if filters:
+        count_query = count_query.where(and_(*filters))
+    total = session.exec(count_query).one()
+    
+    # Apply sorting
+    if sort_by == "name":
+        if sort_order == "desc":
+            query = query.order_by(Product.name.desc())
+        else:
+            query = query.order_by(Product.name.asc())
+    elif sort_by == "price":
+        if sort_order == "desc":
+            query = query.order_by(Product.price.desc())
+        else:
+            query = query.order_by(Product.price.asc())
+    else:  # created_at
+        if sort_order == "desc":
+            query = query.order_by(Product.create_at.desc())
+        else:
+            query = query.order_by(Product.create_at.asc())
+    
+    # Apply pagination
+    offset = (page - 1) * limit
+    query = query.offset(offset).limit(limit)
+    
+    # Execute query
+    products = session.exec(query).all()
+    
+    # Calculate pagination metadata
+    total_pages = (total + limit - 1) // limit
+    has_next = page < total_pages
+    has_prev = page > 1
+    
+    # Convert products to dict to match getproduct format
+    items = []
+    for product in products:
+        items.append({
+            "product_id": product.product_id,
+            "name": product.name,
+            "description": product.description,
+            "price": product.price,
+            "cover": product.cover,
+            "shop_id": product.shop_id,
+            "sub_category_id": product.sub_category_id,
+            "is_approved": product.is_approved,
+            "create_at": product.create_at.isoformat() if product.create_at else None
+        })
+    
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": total_pages,
+        "has_next": has_next,
+        "has_prev": has_prev
+    }
 
 
 

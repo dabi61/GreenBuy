@@ -59,13 +59,13 @@ def validate_refresh_token(token: str,
                            session: Annotated[Session, Depends(get_session)]):
     # Import ở đây để tránh circular import
     from api.auth.token_blacklist import is_token_blacklisted
-    
+
     credential_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid token, Please login again",
         headers={"www-Authenticate": "Bearer"}
     )
-    
+
     # Kiểm tra refresh token có trong blacklist không
     if is_token_blacklisted(token):
         raise HTTPException(
@@ -73,7 +73,7 @@ def validate_refresh_token(token: str,
             detail="Refresh token has been revoked. Please log in again.",
             headers={"WWW-Authenticate": "Bearer"}
         )
-    
+
     try:
         payload = jwt.decode(token, SECRET_KEY, ALGOGRYTHYM)
         email: str | None = payload.get("sub")
