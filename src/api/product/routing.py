@@ -373,15 +373,16 @@ def get_products_by_shop(
     shop_id: int, 
     page: int = 1,
     limit: int = 10,
+    search: Optional[str] = None,
     sort_by: Optional[str] = "created_at",  # name, price, created_at
     sort_order: str = "desc",  # asc, desc
     approved_only: bool = True,
     session: Session = Depends(get_session)
 ):
     """
-    Lấy danh sách sản phẩm theo shop với phân trang và filtering
+    Lấy danh sách sản phẩm theo shop với phân trang, filtering và search
     """
-    from sqlmodel import and_, func
+    from sqlmodel import and_, func, or_
     
     shop = session.get(Shop, shop_id)
     if not shop:
@@ -395,6 +396,14 @@ def get_products_by_shop(
     
     if approved_only:
         filters.append(Product.is_approved == True)
+    
+    if search:
+        filters.append(
+            or_(
+                Product.name.ilike(f"%{search}%"),
+                Product.description.ilike(f"%{search}%")
+            )
+        )
     
     if filters:
         query = query.where(and_(*filters))
