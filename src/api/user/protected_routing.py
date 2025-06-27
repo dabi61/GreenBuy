@@ -102,7 +102,7 @@ async def update_info(
 
 
 
-@router.patch("/me/change-role", response_model=User)
+@router.patch("/me/change-role")
 def change_user_role(
     request: RoleChangeRequest,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -128,5 +128,24 @@ def change_user_role(
     session.add(user)
     session.commit()
     session.refresh(user)
-    return user
+    
+    return {
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "avatar": user.avatar,
+            "phone_number": user.phone_number,
+            "birth_date": user.birth_date.isoformat() if user.birth_date else None,
+            "bio": user.bio,
+            "role": user.role,
+            "is_active": user.is_active,
+            "is_online": user.is_online,
+            "is_verified": user.is_verified,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "updated_at": user.updated_at.isoformat() if user.updated_at else None
+        }
+    }
 

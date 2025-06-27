@@ -79,7 +79,7 @@ def update_user_by_admin(
     session.refresh(user)
     return user
 
-@router.patch("/users/change-role", response_model=User)
+@router.patch("/users/change-role")
 def change_user_role_by_admin(
     request: AdminRoleChangeRequest,
     admin_user: Annotated[User, Depends(require_admin)],
@@ -95,7 +95,26 @@ def change_user_role_by_admin(
     session.add(user)
     session.commit()
     session.refresh(user)
-    return user
+    
+    return {
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "avatar": user.avatar,
+            "phone_number": user.phone_number,
+            "birth_date": user.birth_date.isoformat() if user.birth_date else None,
+            "bio": user.bio,
+            "role": user.role,
+            "is_active": user.is_active,
+            "is_online": user.is_online,
+            "is_verified": user.is_verified,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "updated_at": user.updated_at.isoformat() if user.updated_at else None
+        }
+    }
 
 @router.patch("/users/{user_id}/toggle-active", response_model=User)
 def toggle_user_active_status(
