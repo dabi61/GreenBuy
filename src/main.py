@@ -32,6 +32,8 @@ from api.chat.routing import router as chat_router
 # Payment imports 
 from api.payment.routing import router as payment_router  
 from api.payment.model import Payment, PaymentMethod, RefundRequest  # Import để SQLModel biết về models
+# Debug imports
+from api.db.debug import router as debug_router
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -82,6 +84,7 @@ app.include_router(order_router, prefix='/api/order', tags=["Order"])
 app.include_router(attribute_router, prefix='/api/attribute', tags=["Attribute"])
 app.include_router(chat_router, prefix='/api/chat', tags=["Chat"])
 app.include_router(payment_router, prefix='/api/payment', tags=["Payment"])
+app.include_router(debug_router, prefix='/api/debug', tags=["Debug"])
 
 
 
