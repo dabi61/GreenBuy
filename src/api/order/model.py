@@ -25,7 +25,7 @@ class OrderStatus(str, Enum):
 
 class OrderItem(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    order_id: int = Field(foreign_key="order.id")
+    order_id: int = Field(foreign_key="orders.id")
     product_id: int = Field(foreign_key="product.product_id")
     attribute_id: int = Field(foreign_key="attribute.attribute_id")
     quantity: int = Field(gt=0, description="Quantity must be greater than 0")

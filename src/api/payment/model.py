@@ -60,7 +60,7 @@ class PaymentMethod(SQLModel, table=True):
 class Payment(SQLModel, table=True):
     """Giao dịch thanh toán"""
     id: Optional[int] = Field(default=None, primary_key=True)
-    order_id: int = Field(foreign_key="order.id")
+    order_id: int = Field(foreign_key="orders.id")
     payment_method_id: Optional[int] = Field(default=None, foreign_key="payment_method.id")
     
     amount: float
