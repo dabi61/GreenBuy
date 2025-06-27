@@ -1,163 +1,21 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session, select
-from typing import List
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlmodel import Session, select, and_
+from sqlalchemy import text
+from typing import List, Optional
 from api.auth.dependency import get_current_user
 from api.auth.auth import get_session
-from api.order.model import Order, OrderItem, OrderStatus
+from api.auth.permission import require_admin_or_approver
+from api.order.model import Order, OrderItem, OrderStatus, generate_order_number
 from api.attribute.model import Attribute
 from api.product.model import Product
-from api.order.scheme import OrderCreate, OrderRead, OrderUpdate, OrderStatusUpdate, OrderSummary
+from api.order.scheme import (
+    OrderCreate, OrderRead, OrderUpdate, OrderStatusUpdate, 
+    OrderSummary, CancelOrderRequest, OrderListResponse
+)
 from api.user.model import User
 from datetime import datetime
-import uuid
-import random
-from sqlalchemy import text
-
 
 router = APIRouter()
-
-def generate_order_number() -> str:
-    """Generate unique order number in format: ORD-YYYYMMDD-XXXXXX"""
-    from datetime import datetime
-    date_str = datetime.now().strftime("%Y%m%d")
-    random_suffix = str(random.randint(100000, 999999))
-    return f"ORD-{date_str}-{random_suffix}"
-
-@router.post("/", response_model=dict)
-def create_order(
-    order_data: OrderCreate,
-    current_user: User = Depends(get_current_user),
-    session: Session = Depends(get_session)
-):
-    # Temporarily hardcode values to bypass Product/Attribute queries
-    total_price = 50000.0
-    order_items = []
-    
-    # TEMPORARILY COMMENT OUT complex logic to test basic order creation
-    # total_price = 0.0
-    # order_items: List[OrderItem] = []
-
-    # # Duyệt qua từng item trong đơn hàng
-    # for item in order_data.items:
-    #     # Lấy product attribute tương ứng
-    #     attribute = session.exec(
-    #         select(Attribute).where(Attribute.attribute_id == item.attribute_id)
-    #     ).first()
-    #     if not attribute:
-    #         raise HTTPException(status_code=404, detail=f"Product attribute {item.attribute_id} not found")
-
-    #     if attribute.product_id != item.product_id:
-    #         raise HTTPException(
-    #             status_code=400,
-    #             detail=f"Attribute {item.attribute_id} does not belong to product {item.product_id}"
-    #         )
-
-    #     if attribute.quantity < item.quantity:
-    #         raise HTTPException(
-    #             status_code=400,
-    #             detail=f"Not enough quantity for attribute {item.attribute_id}. Available: {attribute.quantity}"
-    #         )
-
-    #     # Lấy giá sản phẩm từ Product
-    #     product = session.exec(
-    #         select(Product).where(Product.product_id == item.product_id)
-    #     ).first()
-    #     if not product:
-    #         raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
-
-    #     item_price = product.price * item.quantity
-    #     total_price += item_price
-
-    #     # Ghi chú item order
-    #     order_items.append(OrderItem(
-    #         product_id=item.product_id,
-    #         attribute_id=item.attribute_id,
-    #         quantity=item.quantity,
-    #         price=product.price
-    #     ))
-
-    #     # Trừ tồn kho
-    #     attribute.quantity -= item.quantity
-    #     session.add(attribute)
-
-    # Tính toán shipping fee (có thể dựa trên địa chỉ, trọng lượng, v.v.)
-    shipping_fee = calculate_shipping_fee(total_price, order_data.shipping_address)
-    
-    # Tính final amount
-    final_amount = total_price + shipping_fee
-
-    # Tạo đơn hàng với updated field names - sử dụng raw SQL để avoid enum issue
-    order_number = generate_order_number()
-    
-    # Insert order using raw SQL với enum casting
-    insert_sql = text("""
-        INSERT INTO orders (
-                user_id, status, created_at, updated_at, 
-            subtotal, tax_amount, shipping_fee, discount_amount, total_amount,
-            shipping_address, phone_number, recipient_name, delivery_notes, order_number
-        ) VALUES (
-            :user_id, CAST(:status AS orderstatus), :created_at, :updated_at,
-            :subtotal, :tax_amount, :shipping_fee, :discount_amount, :total_amount,
-            :shipping_address, :phone_number, :recipient_name, :delivery_notes, :order_number
-        ) RETURNING id
-    """)
-    
-    result = session.execute(insert_sql, {
-        'user_id': current_user.id,
-        'status': 'pending',  # Will be cast to orderstatus enum
-        'created_at': datetime.utcnow(),
-        'updated_at': datetime.utcnow(),
-        'subtotal': total_price,
-        'tax_amount': 0.0,
-        'shipping_fee': shipping_fee,
-        'discount_amount': 0.0,
-        'total_amount': final_amount,
-        'shipping_address': order_data.shipping_address,
-        'phone_number': order_data.shipping_phone or "N/A",
-        'recipient_name': order_data.recipient_name or "N/A", 
-        'delivery_notes': order_data.shipping_notes,
-        'order_number': order_number
-    })
-    
-    order_id = result.fetchone()[0]
-    session.commit()
-    
-    # TEMPORARILY SKIP OrderItem creation
-    # # Thêm các OrderItem bằng raw SQL để tránh relationship issues
-    # for item in order_items:
-    #     item_sql = text("""
-    #         INSERT INTO orderitem (order_id, product_id, attribute_id, quantity, price)
-    #         VALUES (:order_id, :product_id, :attribute_id, :quantity, :price)
-    #     """)
-    #     session.execute(item_sql, {
-    #         'order_id': order_id,
-    #         'product_id': item.product_id,
-    #         'attribute_id': item.attribute_id,
-    #         'quantity': item.quantity,
-    #         'price': item.price
-    #     })
-
-    # session.commit()
-
-    # Return dict to avoid relationship loading issues
-    return {
-        "id": order_id,
-        "status": "pending",
-        "subtotal": total_price,
-        "tax_amount": 0.0,
-        "shipping_fee": shipping_fee,
-        "discount_amount": 0.0,
-        "total_amount": final_amount,
-        "created_at": datetime.utcnow().isoformat(),
-        "updated_at": datetime.utcnow().isoformat(),
-        "shipping_address": order_data.shipping_address,
-        "phone_number": order_data.shipping_phone or "N/A",
-        "recipient_name": order_data.recipient_name or "N/A",
-        "delivery_notes": order_data.shipping_notes,
-        "order_number": order_number,
-        "items": len(order_items),
-        "message": "Order created successfully! (OrderItems temporarily disabled for testing)"
-    }
 
 def calculate_shipping_fee(total_price: float, shipping_address: str) -> float:
     """
@@ -170,47 +28,204 @@ def calculate_shipping_fee(total_price: float, shipping_address: str) -> float:
     # Phí ship cơ bản
     base_fee = 30000
     
-    # Có thể thêm logic phức tạp hơn dựa trên địa chỉ
-    # Ví dụ: phí ship khác nhau theo tỉnh thành
+    # Phí ship khác nhau theo địa chỉ
     if shipping_address and any(city in shipping_address.lower() for city in ["hà nội", "hồ chí minh"]):
         return base_fee
     else:
         return base_fee + 15000  # Phí ship ngoại tỉnh
 
-@router.get("/", response_model=List[OrderSummary])
+@router.post("/", response_model=OrderRead)
+def create_order(
+    order_data: OrderCreate,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Tạo đơn hàng mới"""
+    try:
+        total_price = 0.0
+        order_items_data = []
+
+        # Validate và tính toán từng item trong đơn hàng
+        for item in order_data.items:
+            # Lấy product attribute
+            attribute = session.exec(
+                select(Attribute).where(Attribute.attribute_id == item.attribute_id)
+            ).first()
+            if not attribute:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Product attribute {item.attribute_id} not found"
+                )
+
+            # Validate attribute thuộc product
+            if attribute.product_id != item.product_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Attribute {item.attribute_id} does not belong to product {item.product_id}"
+                )
+
+            # Kiểm tra tồn kho
+            if attribute.quantity < item.quantity:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Not enough quantity for attribute {item.attribute_id}. Available: {attribute.quantity}"
+                )
+
+            # Lấy giá sản phẩm
+            product = session.exec(
+                select(Product).where(Product.product_id == item.product_id)
+            ).first()
+            if not product:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Product {item.product_id} not found"
+                )
+
+            # Tính giá
+            item_price = attribute.price * item.quantity
+            total_price += item_price
+
+            # Lưu thông tin item để tạo sau
+            order_items_data.append({
+                'product_id': item.product_id,
+                'attribute_id': item.attribute_id,
+                'quantity': item.quantity,
+                'price': attribute.price,
+                'attribute': attribute
+            })
+
+        # Tính phí vận chuyển
+        shipping_fee = calculate_shipping_fee(total_price, order_data.shipping_address)
+        final_amount = total_price + shipping_fee
+
+        # Tạo đơn hàng sử dụng raw SQL để handle enum casting
+        order_number = generate_order_number()
+        
+        insert_sql = text("""
+            INSERT INTO "order" (
+                user_id, status, created_at, updated_at,
+                total_price, shipping_fee, discount_amount, final_amount,
+                shipping_address, shipping_phone, recipient_name, shipping_notes
+            ) VALUES (
+                :user_id, CAST(:status AS orderstatus), :created_at, :updated_at,
+                :total_price, :shipping_fee, :discount_amount, :final_amount,
+                :shipping_address, :shipping_phone, :recipient_name, :shipping_notes
+            ) RETURNING id
+        """)
+        
+        result = session.execute(insert_sql, {
+            'user_id': current_user.id,
+            'status': 'PENDING',  # Use uppercase to match database enum
+            'created_at': datetime.utcnow(),
+            'updated_at': datetime.utcnow(),
+            'total_price': total_price,
+            'shipping_fee': shipping_fee,
+            'discount_amount': 0.0,
+            'final_amount': final_amount,
+            'shipping_address': order_data.shipping_address,
+            'shipping_phone': order_data.phone_number,
+            'recipient_name': order_data.recipient_name,
+            'shipping_notes': order_data.delivery_notes
+        })
+        
+        order_id = result.fetchone()[0]
+
+        # Tạo order items và trừ tồn kho
+        for item_data in order_items_data:
+            # Tạo order item sử dụng raw SQL
+            item_sql = text("""
+                INSERT INTO orderitem (order_id, product_id, attribute_id, quantity, price)
+                VALUES (:order_id, :product_id, :attribute_id, :quantity, :price)
+            """)
+            session.execute(item_sql, {
+                'order_id': order_id,
+                'product_id': item_data['product_id'],
+                'attribute_id': item_data['attribute_id'],
+                'quantity': item_data['quantity'],
+                'price': item_data['price']
+            })
+
+            # Trừ tồn kho
+            item_data['attribute'].quantity -= item_data['quantity']
+            session.add(item_data['attribute'])
+
+        session.commit()
+        
+        # Load order object để return
+        order = session.get(Order, order_id)
+        if not order:
+            raise HTTPException(status_code=500, detail="Failed to retrieve created order")
+        
+        return order
+
+    except HTTPException:
+        session.rollback()
+        raise
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create order: {str(e)}"
+        )
+
+@router.get("/", response_model=OrderListResponse)
 def list_orders(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
-    status: OrderStatus = None,
+    status_filter: Optional[OrderStatus] = None,
     page: int = 1,
     limit: int = 10
 ):
     """Lấy danh sách đơn hàng của user với phân trang"""
-    from api.db.pagination import PaginationParams, paginate
+    from sqlmodel import func
     
+    # Base query
     query = select(Order).where(Order.user_id == current_user.id)
     
-    if status:
-        query = query.where(Order.status == status)
+    # Filter by status if provided
+    if status_filter:
+        query = query.where(Order.status == status_filter.value)
     
+    # Count total
+    count_query = select(func.count(Order.id)).where(Order.user_id == current_user.id)
+    if status_filter:
+        count_query = count_query.where(Order.status == status_filter.value)
+    total = session.exec(count_query).one()
+    
+    # Apply pagination and ordering
     query = query.order_by(Order.created_at.desc())
+    offset = (page - 1) * limit
+    query = query.offset(offset).limit(limit)
     
-    pagination_params = PaginationParams(page=page, limit=limit)
-    result = paginate(session, query, pagination_params)
+    orders = session.exec(query).all()
+    
+    # Calculate pagination metadata
+    total_pages = (total + limit - 1) // limit
+    has_next = page < total_pages
+    has_prev = page > 1
     
     # Convert to summary format
     summaries = []
-    for order in result.items:
+    for order in orders:
         total_items = len(order.items) if order.items else 0
         summaries.append(OrderSummary(
             id=order.id,
+            order_number=order.order_number,
             status=order.status,
             total_items=total_items,
-            final_amount=order.total_amount,  # updated field name
+            total_amount=order.total_amount or 0.0,
             created_at=order.created_at
         ))
     
-    return summaries
+    return OrderListResponse(
+        items=summaries,
+        total=total,
+        page=page,
+        limit=limit,
+        total_pages=total_pages,
+        has_next=has_next,
+        has_prev=has_prev
+    )
 
 @router.get("/{order_id}", response_model=OrderRead)
 def get_order(
@@ -218,9 +233,14 @@ def get_order(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
+    """Lấy chi tiết đơn hàng"""
     order = session.get(Order, order_id)
-    if not order or order.user_id != current_user.id:
+    if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    
+    if order.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     return order
 
 @router.put("/{order_id}", response_model=OrderRead)
@@ -230,17 +250,23 @@ def update_order(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
-    """Cập nhật thông tin shipping của đơn hàng (chỉ khi còn pending)"""
+    """Cập nhật thông tin đơn hàng (chỉ khi còn pending)"""
     order = session.get(Order, order_id)
-    if not order or order.user_id != current_user.id:
+    if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    
+    if order.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
-    # Chỉ cho phép cập nhật khi đơn hàng vẫn pending
-    if order.status != OrderStatus.PENDING:
-        raise HTTPException(status_code=400, detail="Cannot update order after confirmation")
+    if not order.is_editable():
+        raise HTTPException(
+            status_code=400, 
+            detail="Cannot update order after confirmation"
+        )
 
-    # Update shipping information
-    for field, value in update_data.dict(exclude_unset=True).items():
+    # Update fields
+    update_dict = update_data.dict(exclude_unset=True)
+    for field, value in update_dict.items():
         setattr(order, field, value)
     
     order.updated_at = datetime.utcnow()
@@ -249,93 +275,157 @@ def update_order(
     session.refresh(order)
     return order
 
-@router.patch("/{order_id}/status", response_model=OrderRead)
+@router.patch("/{order_id}/status")
 def update_order_status(
     order_id: int,
     status_update: OrderStatusUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin_or_approver),
     session: Session = Depends(get_session)
 ):
-    """Cập nhật trạng thái đơn hàng (cho admin/seller)"""
-    # Trong thực tế, cần check quyền admin hoặc seller owner
+    """Cập nhật trạng thái đơn hàng (chỉ admin/approver)"""
     order = session.get(Order, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
     # Validate status transition
-    valid_transitions = {
-        OrderStatus.PENDING: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
-        OrderStatus.CONFIRMED: [OrderStatus.PROCESSING, OrderStatus.CANCELLED],
-        OrderStatus.PROCESSING: [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
-        OrderStatus.SHIPPED: [OrderStatus.DELIVERED, OrderStatus.RETURNED],
-        OrderStatus.DELIVERED: [OrderStatus.RETURNED],
-        OrderStatus.CANCELLED: [],
-        OrderStatus.REFUNDED: [],
-        OrderStatus.RETURNED: [OrderStatus.REFUNDED]
-    }
-    
-    if status_update.status not in valid_transitions.get(order.status, []):
+    valid_next_statuses = order.get_valid_next_statuses()
+    if status_update.status.value not in valid_next_statuses:
         raise HTTPException(
             status_code=400, 
-            detail=f"Cannot transition from {order.status} to {status_update.status}"
+            detail=f"Cannot transition from {order.status} to {status_update.status.value}. Valid transitions: {valid_next_statuses}"
         )
 
-    # Update status and timestamps
+    # Update status và timestamps sử dụng raw SQL
     old_status = order.status
-    order.status = status_update.status
-    order.updated_at = datetime.utcnow()
+    
+    # Prepare notes update
+    new_internal_notes = order.internal_notes or ""
     
     if status_update.admin_notes:
-        order.internal_notes = status_update.admin_notes  # updated field name
+        if new_internal_notes:
+            new_internal_notes += f" | Admin: {status_update.admin_notes}"
+        else:
+            new_internal_notes = f"Admin: {status_update.admin_notes}"
     
     if status_update.cancellation_reason:
-        order.cancellation_reason = status_update.cancellation_reason
+        if new_internal_notes:
+            new_internal_notes += f" | Cancellation: {status_update.cancellation_reason}"
+        else:
+            new_internal_notes = f"Cancellation: {status_update.cancellation_reason}"
+
+    # Prepare timestamp updates
+    update_params = {
+        'order_id': order.id,
+        'status': status_update.status.value,  # This will be uppercase now
+        'updated_at': datetime.utcnow(),
+        'internal_notes': new_internal_notes,
+        'confirmed_at': order.confirmed_at,
+        'shipped_at': order.shipped_at,
+        'delivered_at': order.delivered_at,
+        'cancelled_at': order.cancelled_at
+    }
 
     # Set specific timestamps
     if status_update.status == OrderStatus.CONFIRMED:
-        order.confirmed_at = datetime.utcnow()
+        update_params['confirmed_at'] = datetime.utcnow()
     elif status_update.status == OrderStatus.SHIPPED:
-        order.shipped_at = datetime.utcnow()
+        update_params['shipped_at'] = datetime.utcnow()
     elif status_update.status == OrderStatus.DELIVERED:
-        order.delivered_at = datetime.utcnow()
+        update_params['delivered_at'] = datetime.utcnow()
+    elif status_update.status == OrderStatus.CANCELLED:
+        update_params['cancelled_at'] = datetime.utcnow()
 
-    session.add(order)
+    # Update using raw SQL with enum casting
+    update_sql = text("""
+        UPDATE "order" SET
+            status = CAST(:status AS orderstatus),
+            updated_at = :updated_at,
+            internal_notes = :internal_notes,
+            confirmed_at = :confirmed_at,
+            shipped_at = :shipped_at,
+            delivered_at = :delivered_at,
+            cancelled_at = :cancelled_at
+        WHERE id = :order_id
+    """)
+    
+    session.execute(update_sql, update_params)
     session.commit()
-    session.refresh(order)
-    return order
+    
+    return {
+        "message": f"Order status updated from {old_status} to {order.status}",
+        "order_id": order.id,
+        "old_status": old_status,
+        "new_status": order.status
+    }
 
 @router.post("/{order_id}/cancel", response_model=OrderRead)
 def cancel_order(
     order_id: int,
-    cancellation_reason: str,
+    cancel_request: CancelOrderRequest,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """Hủy đơn hàng (user có thể hủy khi pending/confirmed)"""
     order = session.get(Order, order_id)
-    if not order or order.user_id != current_user.id:
+    if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-
-    if order.status not in [OrderStatus.PENDING, OrderStatus.CONFIRMED]:
-        raise HTTPException(status_code=400, detail="Cannot cancel order in current status")
-
-    # Hoàn lại inventory
-    items = session.exec(select(OrderItem).where(OrderItem.order_id == order_id)).all()
-    for item in items:
-        attribute = session.get(Attribute, item.attribute_id)
-        if attribute:
-            attribute.quantity += item.quantity
-            session.add(attribute)
-
-    # Update order
-    order.status = OrderStatus.CANCELLED
-    order.cancellation_reason = cancellation_reason
-    order.updated_at = datetime.utcnow()
     
-    session.add(order)
-    session.commit()
-    session.refresh(order)
-    return order
+    if order.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not order.is_cancellable():
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Cannot cancel order with status {order.status}"
+        )
+
+    try:
+        # Hoàn lại inventory
+        items = session.exec(select(OrderItem).where(OrderItem.order_id == order_id)).all()
+        for item in items:
+            attribute = session.get(Attribute, item.attribute_id)
+            if attribute:
+                attribute.quantity += item.quantity
+                session.add(attribute)
+
+        # Update order sử dụng raw SQL
+        # Prepare internal notes
+        new_internal_notes = order.internal_notes or ""
+        if new_internal_notes:
+            new_internal_notes += f" | Customer cancellation: {cancel_request.cancellation_reason}"
+        else:
+            new_internal_notes = f"Customer cancellation: {cancel_request.cancellation_reason}"
+        
+        # Update using raw SQL with enum casting
+        update_sql = text("""
+            UPDATE "order" SET
+                status = CAST(:status AS orderstatus),
+                cancelled_at = :cancelled_at,
+                updated_at = :updated_at,
+                internal_notes = :internal_notes
+            WHERE id = :order_id
+        """)
+        
+        session.execute(update_sql, {
+            'order_id': order.id,
+            'status': 'CANCELLED',  # Use uppercase to match database enum
+            'cancelled_at': datetime.utcnow(),
+            'updated_at': datetime.utcnow(),
+            'internal_notes': new_internal_notes
+        })
+        
+        session.commit()
+        
+        # Load updated order để return
+        updated_order = session.get(Order, order.id)
+        return updated_order
+
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to cancel order: {str(e)}"
+        )
 
 @router.delete("/{order_id}")
 def delete_order(
@@ -343,210 +433,35 @@ def delete_order(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
+    """Xóa đơn hàng (chỉ khi pending hoặc cancelled)"""
     order = session.get(Order, order_id)
-    if not order or order.user_id != current_user.id:
+    if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+    
+    if order.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
-    # Chỉ cho phép xóa đơn hàng đã hủy hoặc pending
-    if order.status not in [OrderStatus.PENDING, OrderStatus.CANCELLED]:
-        raise HTTPException(status_code=400, detail="Cannot delete order in current status")
+    if order.status not in [OrderStatus.PENDING.value, OrderStatus.CANCELLED.value]:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Cannot delete order with status {order.status}"
+        )
 
-    # Xóa các order item trước
-    items = session.exec(select(OrderItem).where(OrderItem.order_id == order_id)).all()
-    for item in items:
-        session.delete(item)
-
-    session.delete(order)
-    session.commit()
-    return {"message": "Order deleted"}
-
-@router.post("/test", response_model=dict)
-def test_order_creation(
-    session: Session = Depends(get_session)
-):
-    """Temporary test endpoint để verify core order logic without authentication"""
     try:
-        # Test raw SQL insert với known user_id
-        order_number = generate_order_number()
-        
-        insert_sql = text("""
-            INSERT INTO orders (
-                user_id, status, created_at, updated_at, 
-                subtotal, tax_amount, shipping_fee, discount_amount, total_amount,
-                shipping_address, phone_number, recipient_name, delivery_notes, order_number
-            ) VALUES (
-                :user_id, CAST(:status AS orderstatus), :created_at, :updated_at,
-                :subtotal, :tax_amount, :shipping_fee, :discount_amount, :total_amount,
-                :shipping_address, :phone_number, :recipient_name, :delivery_notes, :order_number
-            ) RETURNING id
-        """)
-        
-        result = session.execute(insert_sql, {
-            'user_id': 1,  # Valid user ID from database
-            'status': 'pending',
-            'created_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow(),
-            'subtotal': 50000.0,
-            'tax_amount': 0.0,
-            'shipping_fee': 30000,
-            'discount_amount': 0.0,
-            'total_amount': 80000.0,
-            'shipping_address': 'Test Address',
-            'phone_number': '0901234567',
-            'recipient_name': 'Test User',
-            'delivery_notes': 'Test order',
-            'order_number': order_number
-        })
-        
-        order_id = result.fetchone()[0]
+        # Xóa order items trước
+        items = session.exec(select(OrderItem).where(OrderItem.order_id == order_id)).all()
+        for item in items:
+            session.delete(item)
+
+        # Xóa order
+        session.delete(order)
         session.commit()
         
-        return {
-            "success": True,
-            "order_id": order_id,
-            "order_number": order_number,
-            "message": "Order created successfully! Core functionality working!"
-        }
-        
-    except Exception as e:
-        session.rollback()
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Order creation failed"
-        }
+        return {"message": f"Order {order_id} deleted successfully"}
 
-@router.post("/test-simple", response_model=dict)
-def test_simple_order_creation(
-    session: Session = Depends(get_session)
-):
-    """Simple test endpoint without relationships"""
-    try:
-        # Test raw SQL insert WITHOUT loading any relationships
-        order_number = generate_order_number()
-        
-        insert_sql = text("""
-            INSERT INTO orders (
-                user_id, status, created_at, updated_at, 
-                subtotal, tax_amount, shipping_fee, discount_amount, total_amount,
-                shipping_address, phone_number, recipient_name, delivery_notes, order_number
-            ) VALUES (
-                :user_id, CAST(:status AS orderstatus), :created_at, :updated_at,
-                :subtotal, :tax_amount, :shipping_fee, :discount_amount, :total_amount,
-                :shipping_address, :phone_number, :recipient_name, :delivery_notes, :order_number
-            ) RETURNING id
-        """)
-        
-        result = session.execute(insert_sql, {
-            'user_id': 1,
-            'status': 'pending',
-            'created_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow(),
-            'subtotal': 50000.0,
-            'tax_amount': 0.0,
-            'shipping_fee': 30000,
-            'discount_amount': 0.0,
-            'total_amount': 80000.0,
-            'shipping_address': 'Test Address',
-            'phone_number': '0901234567',
-            'recipient_name': 'Test User',
-            'delivery_notes': 'Test order',
-            'order_number': order_number
-        })
-        
-        order_id = result.fetchone()[0]
-        session.commit()
-        
-        # Return simple dict instead of loading Order model with relationships
-        return {
-            "success": True,
-            "order_id": order_id,
-            "order_number": order_number,
-            "message": "Simple order created successfully! No relationships loaded."
-        }
-        
     except Exception as e:
         session.rollback()
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Simple order creation failed"
-        }
-
-@router.post("/test-production", response_model=dict)
-def test_production_order(
-    current_user: User = Depends(get_current_user),
-    session: Session = Depends(get_session)
-):
-    """Test production endpoint with authentication but without complex relationships"""
-    try:
-        # Hardcode values để tránh Product/Attribute relationship loading
-        total_price = 22220.0  # price of product_id=1 * quantity=2
-        shipping_fee = 30000.0
-        final_amount = total_price + shipping_fee
-        
-        order_number = generate_order_number()
-        
-        # Insert order using raw SQL
-        insert_sql = text("""
-            INSERT INTO orders (
-                user_id, status, created_at, updated_at, 
-                subtotal, tax_amount, shipping_fee, discount_amount, total_amount,
-                shipping_address, phone_number, recipient_name, delivery_notes, order_number
-            ) VALUES (
-                :user_id, CAST(:status AS orderstatus), :created_at, :updated_at,
-                :subtotal, :tax_amount, :shipping_fee, :discount_amount, :total_amount,
-                :shipping_address, :phone_number, :recipient_name, :delivery_notes, :order_number
-            ) RETURNING id
-        """)
-        
-        result = session.execute(insert_sql, {
-            'user_id': current_user.id,
-            'status': 'pending',
-            'created_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow(),
-            'subtotal': total_price,
-            'tax_amount': 0.0,
-            'shipping_fee': shipping_fee,
-            'discount_amount': 0.0,
-            'total_amount': final_amount,
-            'shipping_address': '123 Test Street, Ho Chi Minh City',
-            'phone_number': '+84901234567',
-            'recipient_name': 'Test Customer',
-            'delivery_notes': 'Leave at front door',
-            'order_number': order_number
-        })
-        
-        order_id = result.fetchone()[0]
-        
-        # Insert order item using raw SQL
-        item_sql = text("""
-            INSERT INTO orderitem (order_id, product_id, attribute_id, quantity, price)
-            VALUES (:order_id, :product_id, :attribute_id, :quantity, :price)
-        """)
-        session.execute(item_sql, {
-            'order_id': order_id,
-            'product_id': 1,
-            'attribute_id': 1,
-            'quantity': 2,
-            'price': 11110.0  # hardcoded price from database
-        })
-        
-        session.commit()
-        
-        return {
-            "success": True,
-            "order_id": order_id,
-            "order_number": order_number,
-            "user_id": current_user.id,
-            "total_amount": final_amount,
-            "message": "Production order created successfully with authentication!"
-        }
-        
-    except Exception as e:
-        session.rollback()
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Production order creation failed"
-        }
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete order: {str(e)}"
+        )

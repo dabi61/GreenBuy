@@ -155,3 +155,103 @@ def get_shop_addresses(
     ).all()
 
     return addresses
+
+
+@router.get("/me/stats", response_model=dict)
+def get_shop_order_stats(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Session = Depends(get_session),
+):
+    """
+    Thống kê đơn hàng cho shop của user hiện tại
+    - Số lượng đơn hàng chờ lấy hàng (CONFIRMED, PROCESSING)
+    - Số lượng đơn hàng đã hủy (CANCELLED)
+    - Số lượng phản hồi đánh giá
+    """
+    from sqlmodel import func, and_, or_
+    from api.order.model import Order, OrderItem
+    from api.user.model import ShopRating
+    from api.product.model import Product
+    
+    # Lấy shop của user hiện tại
+    shop = session.exec(
+        select(Shop).where(Shop.user_id == current_user.id)
+    ).first()
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+
+    # 1. Số lượng đơn hàng chờ lấy hàng (confirmed, processing)
+    from sqlalchemy import String
+    pending_pickup_count = session.exec(
+        select(func.count(func.distinct(Order.id)))
+        .join(OrderItem, Order.id == OrderItem.order_id)
+        .join(Product, OrderItem.product_id == Product.product_id)
+        .where(
+            and_(
+                Product.shop_id == shop.id,
+                or_(
+                    Order.status.cast(String) == "CONFIRMED",
+                    Order.status.cast(String) == "PROCESSING"
+                )
+            )
+        )
+    ).one()
+
+    # 2. Số lượng đơn hàng đã hủy (cancelled)
+    cancelled_orders_count = session.exec(
+        select(func.count(func.distinct(Order.id)))
+        .join(OrderItem, Order.id == OrderItem.order_id)
+        .join(Product, OrderItem.product_id == Product.product_id)
+        .where(
+            and_(
+                Product.shop_id == shop.id,
+                Order.status.cast(String) == "CANCELLED"
+            )
+        )
+    ).one()
+
+    # 3. Số lượng phản hồi đánh giá
+    ratings_count = session.exec(
+        select(func.count(ShopRating.id))
+        .where(ShopRating.shop_id == shop.id)
+    ).one()
+
+    # 4. Thống kê bổ sung
+    # Tổng số đơn hàng
+    total_orders_count = session.exec(
+        select(func.count(func.distinct(Order.id)))
+        .join(OrderItem, Order.id == OrderItem.order_id)
+        .join(Product, OrderItem.product_id == Product.product_id)
+        .where(Product.shop_id == shop.id)
+    ).one()
+
+    # Đơn hàng đã giao thành công
+    delivered_orders_count = session.exec(
+        select(func.count(func.distinct(Order.id)))
+        .join(OrderItem, Order.id == OrderItem.order_id)
+        .join(Product, OrderItem.product_id == Product.product_id)
+        .where(
+            and_(
+                Product.shop_id == shop.id,
+                Order.status.cast(String) == "DELIVERED"
+            )
+        )
+    ).one()
+
+    # Điểm đánh giá trung bình
+    avg_rating = session.exec(
+        select(func.avg(ShopRating.rating))
+        .where(ShopRating.shop_id == shop.id)
+    ).one() or 0.0
+
+    return {
+        "shop_id": shop.id,
+        "shop_name": shop.name,
+        "pending_pickup": pending_pickup_count,
+        "cancelled_orders": cancelled_orders_count,
+        "ratings_count": ratings_count,
+        "total_orders": total_orders_count,
+        "delivered_orders": delivered_orders_count,
+        "average_rating": round(float(avg_rating), 2) if avg_rating else 0.0,
+        "stats_generated_at": datetime.utcnow().isoformat()
+    }

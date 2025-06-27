@@ -60,7 +60,7 @@ class PaymentMethod(SQLModel, table=True):
 class Payment(SQLModel, table=True):
     """Giao dịch thanh toán"""
     id: Optional[int] = Field(default=None, primary_key=True)
-    order_id: int = Field(foreign_key="orders.id")
+    order_id: int = Field(foreign_key="order.id")
     payment_method_id: Optional[int] = Field(default=None, foreign_key="payment_method.id")
     
     amount: float
@@ -81,7 +81,8 @@ class Payment(SQLModel, table=True):
     notes: Optional[str] = None
     
     # Relationships using TYPE_CHECKING
-    order: Optional["Order"] = Relationship(back_populates="payments")
+    # Temporarily disable order relationship to avoid circular dependency issues
+    # order: Optional["Order"] = Relationship(back_populates="payments")
     payment_method: Optional[PaymentMethod] = Relationship(back_populates="payments")
 
 class RefundRequest(SQLModel, table=True):

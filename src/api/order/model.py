@@ -4,6 +4,7 @@ from datetime import datetime
 from enum import Enum
 import random
 import string
+import uuid
 
 # Forward references to avoid circular imports
 if TYPE_CHECKING:
@@ -13,22 +14,22 @@ if TYPE_CHECKING:
     from api.payment.model import Payment
 
 class OrderStatus(str, Enum):
-    PENDING = "pending"
-    CONFIRMED = "confirmed"
-    PROCESSING = "processing"
-    SHIPPED = "shipped"
-    DELIVERED = "delivered"
-    CANCELLED = "cancelled"
-    REFUNDED = "refunded"
-    RETURNED = "returned"
+    PENDING = "PENDING"
+    CONFIRMED = "CONFIRMED"
+    PROCESSING = "PROCESSING"
+    SHIPPED = "SHIPPED"
+    DELIVERED = "DELIVERED"
+    CANCELLED = "CANCELLED"
+    REFUNDED = "REFUNDED"
+    RETURNED = "RETURNED"
 
 class OrderItem(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    order_id: int = Field(foreign_key="orders.id")
+    order_id: int = Field(foreign_key="order.id")
     product_id: int = Field(foreign_key="product.product_id")
     attribute_id: int = Field(foreign_key="attribute.attribute_id")
-    quantity: int
-    price: float
+    quantity: int = Field(gt=0, description="Quantity must be greater than 0")
+    price: float = Field(ge=0, description="Price must be non-negative")
     
     # Re-enable relationships
     order: Optional["Order"] = Relationship(back_populates="items")
@@ -36,33 +37,33 @@ class OrderItem(SQLModel, table=True):
     attribute: Optional["Attribute"] = Relationship()
 
 def generate_order_number() -> str:
-    """Generate unique order number format: ORD-YYYYMMDD-XXXXXX"""
+    """Generate unique order number format: ORD-YYYYMMDD-XXXXXX with UUID suffix"""
     date_part = datetime.now().strftime("%Y%m%d")
-    random_part = ''.join(random.choices(string.digits, k=6))
-    return f"ORD-{date_part}-{random_part}"
+    unique_part = str(uuid.uuid4()).replace('-', '')[:8].upper()
+    return f"ORD-{date_part}-{unique_part}"
 
 class Order(SQLModel, table=True):
-    __tablename__ = "orders"  # Use proper orders table with full schema
+    __tablename__ = "order"
     
     # Core fields - exactly match database schema
     id: Optional[int] = Field(default=None, primary_key=True)
-    order_number: str = Field(default_factory=generate_order_number)
+    order_number: str = Field(default_factory=generate_order_number, unique=True)
     user_id: int = Field(foreign_key="users.id")
-    status: str = Field(default="pending")  # Temporary: use string instead of enum
+    status: str = Field(default="PENDING", description="Order status as string to match database enum")
     
-    # Pricing fields - match database schema
-    subtotal: Optional[float] = None
-    tax_amount: Optional[float] = None
-    shipping_fee: Optional[float] = None
-    discount_amount: Optional[float] = None
-    total_amount: Optional[float] = None
+    # Pricing fields - match database schema with validation
+    subtotal: Optional[float] = Field(default=0.0, ge=0, description="Subtotal must be non-negative")
+    tax_amount: Optional[float] = Field(default=0.0, ge=0, description="Tax amount must be non-negative")
+    shipping_fee: Optional[float] = Field(default=0.0, ge=0, description="Shipping fee must be non-negative")
+    discount_amount: Optional[float] = Field(default=0.0, ge=0, description="Discount amount must be non-negative")
+    total_amount: Optional[float] = Field(default=0.0, ge=0, description="Total amount must be non-negative")
     
     # Address and contact fields - match database schema
-    shipping_address: str
-    billing_address: Optional[str] = None
-    phone_number: str
-    recipient_name: str
-    delivery_notes: Optional[str] = None
+    shipping_address: str = Field(min_length=10, max_length=500, description="Shipping address is required")
+    billing_address: Optional[str] = Field(default=None, max_length=500)
+    phone_number: str = Field(min_length=10, max_length=15, description="Phone number is required")
+    recipient_name: str = Field(min_length=2, max_length=100, description="Recipient name is required")
+    delivery_notes: Optional[str] = Field(default=None, max_length=1000)
     
     # Timestamp fields - match database schema
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -73,10 +74,33 @@ class Order(SQLModel, table=True):
     cancelled_at: Optional[datetime] = None
     
     # Notes fields - match database schema
-    notes: Optional[str] = None
-    internal_notes: Optional[str] = None
+    notes: Optional[str] = Field(default=None, max_length=1000)
+    internal_notes: Optional[str] = Field(default=None, max_length=1000)
     
     # Re-enable relationships
     user: Optional["User"] = Relationship(back_populates="orders")
     items: List[OrderItem] = Relationship(back_populates="order")
-    payments: List["Payment"] = Relationship(back_populates="order") 
+    # Temporarily disable payments relationship to avoid circular dependency issues
+    # payments: List["Payment"] = Relationship(back_populates="order")
+    
+    def is_editable(self) -> bool:
+        """Check if order can be edited (only pending orders)"""
+        return self.status == OrderStatus.PENDING.value
+    
+    def is_cancellable(self) -> bool:
+        """Check if order can be cancelled"""
+        return self.status in [OrderStatus.PENDING.value, OrderStatus.CONFIRMED.value]
+    
+    def get_valid_next_statuses(self) -> List[str]:
+        """Get valid next statuses for this order"""
+        transitions = {
+            OrderStatus.PENDING.value: [OrderStatus.CONFIRMED.value, OrderStatus.CANCELLED.value],
+            OrderStatus.CONFIRMED.value: [OrderStatus.PROCESSING.value, OrderStatus.CANCELLED.value],
+            OrderStatus.PROCESSING.value: [OrderStatus.SHIPPED.value, OrderStatus.CANCELLED.value],
+            OrderStatus.SHIPPED.value: [OrderStatus.DELIVERED.value, OrderStatus.RETURNED.value],
+            OrderStatus.DELIVERED.value: [OrderStatus.RETURNED.value],
+            OrderStatus.CANCELLED.value: [],
+            OrderStatus.REFUNDED.value: [],
+            OrderStatus.RETURNED.value: [OrderStatus.REFUNDED.value]
+        }
+        return transitions.get(self.status, []) 

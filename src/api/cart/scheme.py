@@ -24,7 +24,7 @@ class CartItemRead(SQLModel):
     cover: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class CartShopGroup(SQLModel):
     shop_id: int
