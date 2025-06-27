@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, and_
 from sqlalchemy import text
-from typing import List, Optional
+from typing import List, Optional, Union
 from api.auth.dependency import get_current_user
 from api.auth.auth import get_session
 from api.auth.permission import require_admin_or_approver
@@ -98,55 +98,44 @@ def create_order(
         shipping_fee = calculate_shipping_fee(total_price, order_data.shipping_address)
         final_amount = total_price + shipping_fee
 
-        # Tạo đơn hàng sử dụng raw SQL để handle enum casting
+        # Tạo đơn hàng sử dụng SQLModel ORM với integer status
         order_number = generate_order_number()
         
-        insert_sql = text("""
-            INSERT INTO orders (
-                order_number, user_id, status, created_at, updated_at,
-                subtotal, tax_amount, shipping_fee, discount_amount, total_amount,
-                shipping_address, billing_address, phone_number, recipient_name, delivery_notes
-            ) VALUES (
-                :order_number, :user_id, CAST(:status AS orderstatus), :created_at, :updated_at,
-                :subtotal, :tax_amount, :shipping_fee, :discount_amount, :total_amount,
-                :shipping_address, :billing_address, :phone_number, :recipient_name, :delivery_notes
-            ) RETURNING id
-        """)
+        # Sử dụng SQLModel ORM với integer status (sau khi migration)
+        order = Order(
+            order_number=order_number,
+            user_id=current_user.id,
+            status=OrderStatus.PENDING,  # Integer value (1)
+            subtotal=total_price,
+            tax_amount=0.0,
+            shipping_fee=shipping_fee,
+            discount_amount=0.0,
+            total_amount=final_amount,
+            shipping_address=order_data.shipping_address,
+            billing_address=order_data.billing_address,
+            phone_number=order_data.phone_number,
+            recipient_name=order_data.recipient_name,
+            delivery_notes=order_data.delivery_notes,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
         
-        result = session.execute(insert_sql, {
-            'order_number': order_number,
-            'user_id': current_user.id,
-            'status': 'pending',  # Use lowercase to match database enum
-            'created_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow(),
-            'subtotal': total_price,
-            'tax_amount': 0.0,
-            'shipping_fee': shipping_fee,
-            'discount_amount': 0.0,
-            'total_amount': final_amount,
-            'shipping_address': order_data.shipping_address,
-            'billing_address': order_data.billing_address,
-            'phone_number': order_data.phone_number,
-            'recipient_name': order_data.recipient_name,
-            'delivery_notes': order_data.delivery_notes
-        })
+        session.add(order)
+        session.flush()  # Get ID before committing
         
-        order_id = result.fetchone()[0]
+        order_id = order.id
 
         # Tạo order items và trừ tồn kho
         for item_data in order_items_data:
-            # Tạo order item sử dụng raw SQL
-            item_sql = text("""
-                INSERT INTO orderitem (order_id, product_id, attribute_id, quantity, price)
-                VALUES (:order_id, :product_id, :attribute_id, :quantity, :price)
-            """)
-            session.execute(item_sql, {
-                'order_id': order_id,
-                'product_id': item_data['product_id'],
-                'attribute_id': item_data['attribute_id'],
-                'quantity': item_data['quantity'],
-                'price': item_data['price']
-            })
+            # Tạo order item sử dụng SQLModel ORM để tránh constraint conflict
+            order_item = OrderItem(
+                order_id=order_id,
+                product_id=item_data['product_id'],
+                attribute_id=item_data['attribute_id'],
+                quantity=item_data['quantity'],
+                price=item_data['price']
+            )
+            session.add(order_item)
 
             # Trừ tồn kho
             item_data['attribute'].quantity -= item_data['quantity']
@@ -154,11 +143,8 @@ def create_order(
 
         session.commit()
         
-        # Load order object để return
-        order = session.get(Order, order_id)
-        if not order:
-            raise HTTPException(status_code=500, detail="Failed to retrieve created order")
-        
+        # Refresh order object để return
+        session.refresh(order)
         return order
 
     except HTTPException:
@@ -175,24 +161,34 @@ def create_order(
 def list_orders(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
-    status_filter: Optional[OrderStatus] = None,
+    status_filter: Optional[str] = Query(None, description="Filter by status (can be string like 'pending' or number like '1')"),
     page: int = 1,
     limit: int = 10
 ):
     """Lấy danh sách đơn hàng của user với phân trang"""
     from sqlmodel import func
     
+    # Convert status_filter to integer if provided
+    status_filter_int = None
+    if status_filter:
+        try:
+            # Try to parse as integer first
+            status_filter_int = int(status_filter)
+        except ValueError:
+            # If not integer, try to convert from status name to ID
+            status_filter_int = OrderStatus.get_id(status_filter.lower())
+    
     # Base query
     query = select(Order).where(Order.user_id == current_user.id)
     
     # Filter by status if provided
-    if status_filter:
-        query = query.where(Order.status == status_filter.value)
+    if status_filter_int:
+        query = query.where(Order.status == status_filter_int)
     
     # Count total
     count_query = select(func.count(Order.id)).where(Order.user_id == current_user.id)
-    if status_filter:
-        count_query = count_query.where(Order.status == status_filter.value)
+    if status_filter_int:
+        count_query = count_query.where(Order.status == status_filter_int)
     total = session.exec(count_query).one()
     
     # Apply pagination and ordering
@@ -214,7 +210,7 @@ def list_orders(
         summaries.append(OrderSummary(
             id=order.id,
             order_number=order.order_number,
-            status=order.status,
+            status=order.get_status_name(),  # Use helper method to get status name
             total_items=total_items,
             total_amount=order.total_amount or 0.0,
             created_at=order.created_at
@@ -281,7 +277,7 @@ def update_order(
 @router.patch("/{order_id}/status")
 def update_order_status(
     order_id: int,
-    status_update: OrderStatusUpdate,
+    status_update: OrderStatusUpdate,  # Use request body instead of query parameter
     current_user: User = Depends(require_admin_or_approver),
     session: Session = Depends(get_session)
 ):
@@ -290,78 +286,69 @@ def update_order_status(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
+    new_status = status_update.status
+    
     # Validate status transition
     valid_next_statuses = order.get_valid_next_statuses()
-    if status_update.status.value not in valid_next_statuses:
+    if new_status not in valid_next_statuses:
         raise HTTPException(
             status_code=400, 
-            detail=f"Cannot transition from {order.status} to {status_update.status.value}. Valid transitions: {valid_next_statuses}"
+            detail=f"Cannot transition from {OrderStatus.get_name(order.status)} to {OrderStatus.get_name(new_status)}. Valid transitions: {[OrderStatus.get_name(s) for s in valid_next_statuses]}"
         )
 
-    # Update status và timestamps sử dụng raw SQL
+    # Update status và timestamps
     old_status = order.status
+    old_status_name = OrderStatus.get_name(old_status)
+    new_status_name = OrderStatus.get_name(new_status)
     
-    # Prepare notes update
-    new_internal_notes = order.internal_notes or ""
+    order.status = new_status
+    order.updated_at = datetime.utcnow()
     
+    # Update admin notes if provided
     if status_update.admin_notes:
-        if new_internal_notes:
-            new_internal_notes += f" | Admin: {status_update.admin_notes}"
+        if order.internal_notes:
+            order.internal_notes += f" | Admin note: {status_update.admin_notes}"
         else:
-            new_internal_notes = f"Admin: {status_update.admin_notes}"
+            order.internal_notes = f"Admin note: {status_update.admin_notes}"
     
-    if status_update.cancellation_reason:
-        if new_internal_notes:
-            new_internal_notes += f" | Cancellation: {status_update.cancellation_reason}"
+    # Update tracking number if provided (for shipped orders)
+    if status_update.tracking_number and new_status == OrderStatus.SHIPPED:
+        if order.notes:
+            order.notes += f" | Tracking: {status_update.tracking_number}"
         else:
-            new_internal_notes = f"Cancellation: {status_update.cancellation_reason}"
-
-    # Prepare timestamp updates
-    update_params = {
-        'order_id': order.id,
-        'status': status_update.status.value,  # This will be uppercase now
-        'updated_at': datetime.utcnow(),
-        'internal_notes': new_internal_notes,
-        'confirmed_at': order.confirmed_at,
-        'shipped_at': order.shipped_at,
-        'delivered_at': order.delivered_at,
-        'cancelled_at': order.cancelled_at
-    }
-
-    # Set specific timestamps
-    if status_update.status == OrderStatus.CONFIRMED:
-        update_params['confirmed_at'] = datetime.utcnow()
-    elif status_update.status == OrderStatus.SHIPPED:
-        update_params['shipped_at'] = datetime.utcnow()
-    elif status_update.status == OrderStatus.DELIVERED:
-        update_params['delivered_at'] = datetime.utcnow()
-    elif status_update.status == OrderStatus.CANCELLED:
-        update_params['cancelled_at'] = datetime.utcnow()
-
-    # Update using raw SQL with enum casting
-    update_sql = text("""
-        UPDATE orders SET
-            status = CAST(:status AS orderstatus),
-            updated_at = :updated_at,
-            internal_notes = :internal_notes,
-            confirmed_at = :confirmed_at,
-            shipped_at = :shipped_at,
-            delivered_at = :delivered_at,
-            cancelled_at = :cancelled_at
-        WHERE id = :order_id
-    """)
+            order.notes = f"Tracking: {status_update.tracking_number}"
     
-    session.execute(update_sql, update_params)
+    # Update cancellation reason if provided (for cancelled orders)
+    if status_update.cancellation_reason and new_status == OrderStatus.CANCELLED:
+        if order.internal_notes:
+            order.internal_notes += f" | Cancellation: {status_update.cancellation_reason}"
+        else:
+            order.internal_notes = f"Cancellation: {status_update.cancellation_reason}"
+
+    # Set specific timestamps based on new status
+    if new_status == OrderStatus.CONFIRMED:
+        order.confirmed_at = datetime.utcnow()
+    elif new_status == OrderStatus.SHIPPED:
+        order.shipped_at = datetime.utcnow()
+    elif new_status == OrderStatus.DELIVERED:
+        order.delivered_at = datetime.utcnow()
+    elif new_status == OrderStatus.CANCELLED:
+        order.cancelled_at = datetime.utcnow()
+    
+    session.add(order)
     session.commit()
     
     return {
-        "message": f"Order status updated from {old_status} to {order.status}",
+        "message": f"Order status updated from {old_status_name} to {new_status_name}",
         "order_id": order.id,
-        "old_status": old_status,
-        "new_status": order.status
+        "old_status": old_status_name,
+        "new_status": new_status_name,
+        "admin_notes": status_update.admin_notes,
+        "tracking_number": status_update.tracking_number,
+        "cancellation_reason": status_update.cancellation_reason
     }
 
-@router.post("/{order_id}/cancel", response_model=OrderRead)
+@router.post("/{order_id}/cancel")
 def cancel_order(
     order_id: int,
     cancel_request: CancelOrderRequest,
@@ -391,37 +378,28 @@ def cancel_order(
                 attribute.quantity += item.quantity
                 session.add(attribute)
 
-        # Update order sử dụng raw SQL
-        # Prepare internal notes
-        new_internal_notes = order.internal_notes or ""
-        if new_internal_notes:
-            new_internal_notes += f" | Customer cancellation: {cancel_request.cancellation_reason}"
+        # Update order status to cancelled
+        old_status_name = order.get_status_name()
+        order.status = OrderStatus.CANCELLED
+        order.cancelled_at = datetime.utcnow()
+        order.updated_at = datetime.utcnow()
+        
+        # Update internal notes
+        if order.internal_notes:
+            order.internal_notes += f" | Customer cancellation: {cancel_request.cancellation_reason}"
         else:
-            new_internal_notes = f"Customer cancellation: {cancel_request.cancellation_reason}"
+            order.internal_notes = f"Customer cancellation: {cancel_request.cancellation_reason}"
         
-        # Update using raw SQL with enum casting
-        update_sql = text("""
-            UPDATE orders SET
-                status = CAST(:status AS orderstatus),
-                cancelled_at = :cancelled_at,
-                updated_at = :updated_at,
-                internal_notes = :internal_notes
-            WHERE id = :order_id
-        """)
-        
-        session.execute(update_sql, {
-            'order_id': order.id,
-            'status': 'cancelled',  # Use lowercase to match database enum
-            'cancelled_at': datetime.utcnow(),
-            'updated_at': datetime.utcnow(),
-            'internal_notes': new_internal_notes
-        })
+        session.add(order)
         
         session.commit()
         
-        # Load updated order để return
-        updated_order = session.get(Order, order.id)
-        return updated_order
+        # Return success message with status info
+        return {
+            "message": f"Order cancelled successfully. Status changed from {old_status_name} to cancelled",
+            "order_id": order.id,
+            "new_status": "cancelled"
+        }
 
     except Exception as e:
         session.rollback()
@@ -444,10 +422,10 @@ def delete_order(
     if order.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    if order.status not in [OrderStatus.PENDING.value, OrderStatus.CANCELLED.value]:
+    if order.status not in [OrderStatus.PENDING, OrderStatus.CANCELLED]:
         raise HTTPException(
             status_code=400, 
-            detail=f"Cannot delete order with status {order.status}"
+            detail=f"Cannot delete order with status {order.get_status_name()}"
         )
 
     try:

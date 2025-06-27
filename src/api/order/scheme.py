@@ -1,7 +1,7 @@
 from pydantic import BaseModel, validator, Field
 from typing import List, Optional
 from datetime import datetime
-from .model import OrderStatus
+from api.order.model import OrderStatus
 
 class OrderItemCreate(BaseModel):
     product_id: int = Field(gt=0, description="Product ID must be positive")
@@ -44,7 +44,7 @@ class OrderCreate(BaseModel):
 class OrderRead(BaseModel):
     id: int
     order_number: str
-    status: str  # Use string to match database enum
+    status: str  # Will be converted from integer to string in validator
     subtotal: Optional[float] = 0.0
     tax_amount: Optional[float] = 0.0
     shipping_fee: Optional[float] = 0.0
@@ -72,6 +72,13 @@ class OrderRead(BaseModel):
     
     items: List[OrderItemRead] = []
     
+    @validator('status', pre=True)
+    def convert_status_to_string(cls, v):
+        """Convert integer status to string name"""
+        if isinstance(v, int):
+            return OrderStatus.get_name(v)
+        return v
+    
     class Config:
         from_attributes = True
 
@@ -92,16 +99,16 @@ class OrderUpdate(BaseModel):
         return v
 
 class OrderStatusUpdate(BaseModel):
-    status: OrderStatus
+    status: int = Field(ge=1, le=8, description="Status must be between 1-8 (1=pending, 2=confirmed, 3=processing, 4=shipped, 5=delivered, 6=cancelled, 7=refunded, 8=returned)")
     admin_notes: Optional[str] = Field(default=None, max_length=1000)
     tracking_number: Optional[str] = Field(default=None, max_length=100)
     cancellation_reason: Optional[str] = Field(default=None, max_length=500)
 
     @validator('status')
     def validate_status_transition(cls, v):
-        # This will be further validated in the routing layer with current order status
-        valid_statuses = [status.value for status in OrderStatus]
-        if v.value not in valid_statuses:
+        # Valid status values are 1-8
+        valid_statuses = [1, 2, 3, 4, 5, 6, 7, 8]
+        if v not in valid_statuses:
             raise ValueError(f'Invalid status. Must be one of: {valid_statuses}')
         return v
 
@@ -116,6 +123,13 @@ class OrderSummary(BaseModel):
     total_items: int
     total_amount: float  # Match field name in model
     created_at: datetime
+    
+    @validator('status', pre=True)
+    def convert_status_to_string(cls, v):
+        """Convert integer status to string name"""
+        if isinstance(v, int):
+            return OrderStatus.get_name(v)
+        return v
     
     class Config:
         from_attributes = True

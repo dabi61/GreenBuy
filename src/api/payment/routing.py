@@ -7,7 +7,7 @@ import uuid
 from api.auth.dependency import get_current_user
 from api.auth.auth import get_session
 from api.user.model import User
-from api.order.model import Order, OrderStatus
+from api.order.model import Order
 from .model import Payment, PaymentMethod, PaymentStatus, RefundRequest
 from .scheme import (
     PaymentMethodCreate, PaymentMethodRead, PaymentMethodUpdate,

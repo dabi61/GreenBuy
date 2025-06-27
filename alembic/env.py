@@ -2,6 +2,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 from logging.config import fileConfig
+from decouple import config as decouple_config
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
@@ -57,7 +58,10 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    # Use DATABASE_URL from environment variable if available
+    database_url = decouple_config('DATABASE_URL', default=None)
+    url = database_url if database_url else config.get_main_option("sqlalchemy.url")
+    
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -76,11 +80,25 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # Use DATABASE_URL from environment variable if available
+    database_url = decouple_config('DATABASE_URL', default=None)
+    
+    if database_url:
+        # Override the config with DATABASE_URL from environment
+        configuration = config.get_section(config.config_ini_section, {})
+        configuration['sqlalchemy.url'] = database_url
+        connectable = engine_from_config(
+            configuration,
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+        )
+    else:
+        # Fallback to config from ini file
+        connectable = engine_from_config(
+            config.get_section(config.config_ini_section, {}),
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+        )
 
     with connectable.connect() as connection:
         context.configure(

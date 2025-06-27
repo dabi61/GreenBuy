@@ -1,5 +1,5 @@
 from .routing import router
-from .model import Order, OrderItem, OrderStatus, generate_order_number
+from .model import Order, OrderItem, generate_order_number
 from .scheme import (
     OrderCreate, OrderRead, OrderUpdate, OrderStatusUpdate,
     OrderSummary, CancelOrderRequest, OrderListResponse,
@@ -8,7 +8,7 @@ from .scheme import (
 
 __all__ = [
     'router',
-    'Order', 'OrderItem', 'OrderStatus', 'generate_order_number',
+    'Order', 'OrderItem', 'generate_order_number',
     'OrderCreate', 'OrderRead', 'OrderUpdate', 'OrderStatusUpdate',
     'OrderSummary', 'CancelOrderRequest', 'OrderListResponse',
     'OrderItemCreate', 'OrderItemRead'
