@@ -164,8 +164,8 @@ def get_shop_order_stats(
 ):
     """
     Thống kê đơn hàng cho shop của user hiện tại
-    - Số lượng đơn hàng chờ lấy hàng (CONFIRMED, PROCESSING)
-    - Số lượng đơn hàng đã hủy (CANCELLED)
+    - Số lượng đơn hàng chờ lấy hàng (confirmed, processing)
+    - Số lượng đơn hàng đã hủy (cancelled)
     - Số lượng phản hồi đánh giá
     """
     from sqlmodel import func, and_, or_
@@ -190,8 +190,8 @@ def get_shop_order_stats(
             and_(
                 Product.shop_id == shop.id,
                 or_(
-                    Order.status.cast(String) == "CONFIRMED",
-                    Order.status.cast(String) == "PROCESSING"
+                    Order.status.cast(String) == "confirmed",
+                    Order.status.cast(String) == "processing"
                 )
             )
         )
@@ -205,7 +205,7 @@ def get_shop_order_stats(
         .where(
             and_(
                 Product.shop_id == shop.id,
-                Order.status.cast(String) == "CANCELLED"
+                Order.status.cast(String) == "cancelled"
             )
         )
     ).one()
@@ -233,7 +233,7 @@ def get_shop_order_stats(
         .where(
             and_(
                 Product.shop_id == shop.id,
-                Order.status.cast(String) == "DELIVERED"
+                Order.status.cast(String) == "delivered"
             )
         )
     ).one()

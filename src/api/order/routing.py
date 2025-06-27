@@ -102,30 +102,33 @@ def create_order(
         order_number = generate_order_number()
         
         insert_sql = text("""
-            INSERT INTO "order" (
-                user_id, status, created_at, updated_at,
-                total_price, shipping_fee, discount_amount, final_amount,
-                shipping_address, shipping_phone, recipient_name, shipping_notes
+            INSERT INTO orders (
+                order_number, user_id, status, created_at, updated_at,
+                subtotal, tax_amount, shipping_fee, discount_amount, total_amount,
+                shipping_address, billing_address, phone_number, recipient_name, delivery_notes
             ) VALUES (
-                :user_id, CAST(:status AS orderstatus), :created_at, :updated_at,
-                :total_price, :shipping_fee, :discount_amount, :final_amount,
-                :shipping_address, :shipping_phone, :recipient_name, :shipping_notes
+                :order_number, :user_id, CAST(:status AS orderstatus), :created_at, :updated_at,
+                :subtotal, :tax_amount, :shipping_fee, :discount_amount, :total_amount,
+                :shipping_address, :billing_address, :phone_number, :recipient_name, :delivery_notes
             ) RETURNING id
         """)
         
         result = session.execute(insert_sql, {
+            'order_number': order_number,
             'user_id': current_user.id,
-            'status': 'PENDING',  # Use uppercase to match database enum
+            'status': 'pending',  # Use lowercase to match database enum
             'created_at': datetime.utcnow(),
             'updated_at': datetime.utcnow(),
-            'total_price': total_price,
+            'subtotal': total_price,
+            'tax_amount': 0.0,
             'shipping_fee': shipping_fee,
             'discount_amount': 0.0,
-            'final_amount': final_amount,
+            'total_amount': final_amount,
             'shipping_address': order_data.shipping_address,
-            'shipping_phone': order_data.phone_number,
+            'billing_address': order_data.billing_address,
+            'phone_number': order_data.phone_number,
             'recipient_name': order_data.recipient_name,
-            'shipping_notes': order_data.delivery_notes
+            'delivery_notes': order_data.delivery_notes
         })
         
         order_id = result.fetchone()[0]
@@ -337,7 +340,7 @@ def update_order_status(
 
     # Update using raw SQL with enum casting
     update_sql = text("""
-        UPDATE "order" SET
+        UPDATE orders SET
             status = CAST(:status AS orderstatus),
             updated_at = :updated_at,
             internal_notes = :internal_notes,
@@ -398,7 +401,7 @@ def cancel_order(
         
         # Update using raw SQL with enum casting
         update_sql = text("""
-            UPDATE "order" SET
+            UPDATE orders SET
                 status = CAST(:status AS orderstatus),
                 cancelled_at = :cancelled_at,
                 updated_at = :updated_at,
@@ -408,7 +411,7 @@ def cancel_order(
         
         session.execute(update_sql, {
             'order_id': order.id,
-            'status': 'CANCELLED',  # Use uppercase to match database enum
+            'status': 'cancelled',  # Use lowercase to match database enum
             'cancelled_at': datetime.utcnow(),
             'updated_at': datetime.utcnow(),
             'internal_notes': new_internal_notes

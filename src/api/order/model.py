@@ -14,14 +14,14 @@ if TYPE_CHECKING:
     from api.payment.model import Payment
 
 class OrderStatus(str, Enum):
-    PENDING = "PENDING"
-    CONFIRMED = "CONFIRMED"
-    PROCESSING = "PROCESSING"
-    SHIPPED = "SHIPPED"
-    DELIVERED = "DELIVERED"
-    CANCELLED = "CANCELLED"
-    REFUNDED = "REFUNDED"
-    RETURNED = "RETURNED"
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    PROCESSING = "processing"
+    SHIPPED = "shipped"
+    DELIVERED = "delivered"
+    CANCELLED = "cancelled"
+    REFUNDED = "refunded"
+    RETURNED = "returned"
 
 class OrderItem(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -43,13 +43,13 @@ def generate_order_number() -> str:
     return f"ORD-{date_part}-{unique_part}"
 
 class Order(SQLModel, table=True):
-    __tablename__ = "order"
+    __tablename__ = "orders"
     
     # Core fields - exactly match database schema
     id: Optional[int] = Field(default=None, primary_key=True)
     order_number: str = Field(default_factory=generate_order_number, unique=True)
     user_id: int = Field(foreign_key="users.id")
-    status: str = Field(default="PENDING", description="Order status as string to match database enum")
+    status: str = Field(default="pending", description="Order status as string to match database enum")
     
     # Pricing fields - match database schema with validation
     subtotal: Optional[float] = Field(default=0.0, ge=0, description="Subtotal must be non-negative")
