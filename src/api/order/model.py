@@ -51,12 +51,19 @@ class OrderStatus:
         return cls.PENDING  # Default to pending
 
 class OrderItem(SQLModel, table=True):
+    __tablename__ = "order_items"
+    
     id: Optional[int] = Field(default=None, primary_key=True)
     order_id: int = Field(foreign_key="orders.id")
     product_id: int = Field(foreign_key="product.product_id")
     attribute_id: int = Field(foreign_key="attribute.attribute_id")
+    product_name: Optional[str] = None
+    product_image: Optional[str] = None
+    attribute_details: Optional[str] = None
     quantity: int = Field(gt=0, description="Quantity must be greater than 0")
-    price: float = Field(ge=0, description="Price must be non-negative")
+    unit_price: float = Field(ge=0, description="Unit price must be non-negative")
+    total_price: float = Field(ge=0, description="Total price must be non-negative")
+    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
     
     # Re-enable relationships
     order: Optional["Order"] = Relationship(back_populates="items")

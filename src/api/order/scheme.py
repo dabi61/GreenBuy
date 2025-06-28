@@ -12,8 +12,13 @@ class OrderItemRead(BaseModel):
     id: int
     product_id: int
     attribute_id: int
+    product_name: Optional[str] = None
+    product_image: Optional[str] = None
+    attribute_details: Optional[str] = None
     quantity: int
-    price: float
+    unit_price: float
+    total_price: float
+    created_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
@@ -137,6 +142,71 @@ class OrderSummary(BaseModel):
 class OrderListResponse(BaseModel):
     """Response for paginated order list"""
     items: List[OrderSummary]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+class OrderForShop(BaseModel):
+    """Chi tiết đơn hàng cho shop"""
+    id: int
+    order_number: str
+    status: str
+    customer_name: str  # recipient_name
+    customer_phone: str  # phone_number
+    shipping_address: str
+    total_items: int
+    total_amount: float
+    created_at: datetime
+    updated_at: datetime
+    confirmed_at: Optional[datetime] = None
+    shipped_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
+    
+    # Thông tin sản phẩm của shop trong đơn hàng này
+    shop_items: List[dict]  # [{product_name, quantity, price}]
+    shop_subtotal: float  # Tổng tiền chỉ tính các sản phẩm của shop này
+    
+    @validator('status', pre=True)
+    def convert_status_to_string(cls, v):
+        """Convert integer status to string name"""
+        if isinstance(v, int):
+            return OrderStatus.get_name(v)
+        return v
+    
+    class Config:
+        from_attributes = True
+
+class ShopOrderStats(BaseModel):
+    """Thống kê đơn hàng cho shop"""
+    total_orders: int
+    pending_orders: int      # status = 1
+    confirmed_orders: int    # status = 2  
+    processing_orders: int   # status = 3
+    shipped_orders: int      # status = 4
+    delivered_orders: int    # status = 5
+    cancelled_orders: int    # status = 6
+    refunded_orders: int     # status = 7
+    returned_orders: int     # status = 8
+    
+    total_revenue: float     # Tổng doanh thu từ các đơn đã hoàn thành
+    pending_revenue: float   # Doanh thu từ các đơn chờ xử lý
+    
+    # Thống kê theo thời gian
+    orders_today: int
+    orders_this_week: int
+    orders_this_month: int
+    
+    # Rating info - số lượng đánh giá cần trả lời
+    pending_ratings: int = 0
+
+class ShopOrderListResponse(BaseModel):
+    """Response cho danh sách đơn hàng của shop"""
+    items: List[OrderForShop]
+    stats: ShopOrderStats
     total: int
     page: int
     limit: int

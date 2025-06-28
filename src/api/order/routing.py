@@ -10,7 +10,8 @@ from api.attribute.model import Attribute
 from api.product.model import Product
 from api.order.scheme import (
     OrderCreate, OrderRead, OrderUpdate, OrderStatusUpdate, 
-    OrderSummary, CancelOrderRequest, OrderListResponse
+    OrderSummary, CancelOrderRequest, OrderListResponse,
+    OrderForShop, ShopOrderStats, ShopOrderListResponse
 )
 from api.user.model import User
 from datetime import datetime
@@ -81,8 +82,9 @@ def create_order(
                     detail=f"Product {item.product_id} not found"
                 )
 
-            # Tính giá
-            item_price = attribute.price * item.quantity
+            # Tính giá - convert decimal to float
+            unit_price = float(attribute.price) if attribute.price else 0.0
+            item_price = unit_price * item.quantity
             total_price += item_price
 
             # Lưu thông tin item để tạo sau
@@ -90,8 +92,9 @@ def create_order(
                 'product_id': item.product_id,
                 'attribute_id': item.attribute_id,
                 'quantity': item.quantity,
-                'price': attribute.price,
-                'attribute': attribute
+                'price': unit_price,
+                'attribute': attribute,
+                'product': product
             })
 
         # Tính phí vận chuyển
@@ -127,13 +130,26 @@ def create_order(
 
         # Tạo order items và trừ tồn kho
         for item_data in order_items_data:
-            # Tạo order item sử dụng SQLModel ORM để tránh constraint conflict
+            # Tạo order item sử dụng SQLModel ORM để tránh constraint conflict  
+            attribute = item_data['attribute']
+            # Tạo attribute_details từ color và size
+            attribute_parts = []
+            if attribute.color:
+                attribute_parts.append(f"Màu: {attribute.color}")
+            if attribute.size:
+                attribute_parts.append(f"Size: {attribute.size}")
+            attribute_details = " | ".join(attribute_parts) if attribute_parts else "Mặc định"
+            
+            unit_price = item_data['price']  # Already converted to float above
             order_item = OrderItem(
                 order_id=order_id,
                 product_id=item_data['product_id'],
                 attribute_id=item_data['attribute_id'],
+                product_name=item_data['product'].name,
+                attribute_details=attribute_details,
                 quantity=item_data['quantity'],
-                price=item_data['price']
+                unit_price=unit_price,
+                total_price=unit_price * item_data['quantity']
             )
             session.add(order_item)
 
@@ -225,6 +241,339 @@ def list_orders(
         has_next=has_next,
         has_prev=has_prev
     )
+
+@router.get("/shop-orders", response_model=ShopOrderListResponse)
+def get_shop_orders(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+    status_filter: Optional[str] = Query(None, description="Filter by status"),
+    page: int = Query(1, ge=1, description="Trang hiện tại"),
+    limit: int = Query(10, ge=1, le=100, description="Số lượng đơn hàng mỗi trang"),
+    date_from: Optional[str] = Query(None, description="Lọc từ ngày (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Lọc đến ngày (YYYY-MM-DD)")
+):
+    """Lấy tất cả đơn hàng của shop với thống kê chi tiết"""
+    from sqlmodel import func, col
+    from sqlalchemy import text
+    from api.shop.model import Shop
+    from datetime import datetime, timedelta
+    
+    # Kiểm tra user có shop không
+    shop = session.exec(select(Shop).where(Shop.user_id == current_user.id)).first()
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found for current user")
+    
+    # Convert status filter to integer if provided
+    status_filter_int = None
+    if status_filter:
+        try:
+            status_filter_int = int(status_filter)
+        except ValueError:
+            status_filter_int = OrderStatus.get_id(status_filter.lower())
+    
+    # Parse date filters
+    date_from_dt = None
+    date_to_dt = None
+    if date_from:
+        try:
+            date_from_dt = datetime.strptime(date_from, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date_from format. Use YYYY-MM-DD")
+    
+    if date_to:
+        try:
+            date_to_dt = datetime.strptime(date_to, "%Y-%m-%d")
+            # Set to end of day
+            date_to_dt = date_to_dt.replace(hour=23, minute=59, second=59)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date_to format. Use YYYY-MM-DD")
+    
+    # Query để lấy tất cả orders có chứa sản phẩm của shop này
+    base_query = text("""
+        SELECT DISTINCT o.*
+        FROM orders o
+        JOIN order_items oi ON o.id = oi.order_id
+        JOIN product p ON oi.product_id = p.product_id
+        WHERE p.shop_id = :shop_id
+    """)
+    
+    # Build dynamic WHERE clauses
+    where_clauses = ["p.shop_id = :shop_id"]
+    params = {"shop_id": shop.id}
+    
+    if status_filter_int:
+        where_clauses.append("o.status = :status")
+        params["status"] = status_filter_int
+    
+    if date_from_dt:
+        where_clauses.append("o.created_at >= :date_from")
+        params["date_from"] = date_from_dt
+    
+    if date_to_dt:
+        where_clauses.append("o.created_at <= :date_to")
+        params["date_to"] = date_to_dt
+    
+    # Main query with pagination
+    main_query = text(f"""
+        SELECT DISTINCT o.*, 
+               COALESCE(CONCAT(u.first_name, ' ', u.last_name), u.username, u.email) as customer_full_name,
+               COUNT(oi.id) as total_items_in_order
+        FROM orders o
+        JOIN order_items oi ON o.id = oi.order_id
+        JOIN product p ON oi.product_id = p.product_id
+        JOIN users u ON o.user_id = u.id
+        WHERE {' AND '.join(where_clauses)}
+        GROUP BY o.id, u.first_name, u.last_name, u.username, u.email
+        ORDER BY o.created_at DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    
+    # Count query
+    count_query = text(f"""
+        SELECT COUNT(DISTINCT o.id)
+        FROM orders o
+        JOIN order_items oi ON o.id = oi.order_id
+        JOIN product p ON oi.product_id = p.product_id
+        WHERE {' AND '.join(where_clauses)}
+    """)
+    
+    # Execute queries
+    offset = (page - 1) * limit
+    params.update({"limit": limit, "offset": offset})
+    
+    orders_result = session.execute(main_query, params).fetchall()
+    total_count = session.execute(count_query, params).fetchone()[0]
+    
+    # Prepare response data
+    shop_orders = []
+    
+    for order_row in orders_result:
+        # Lấy thông tin chi tiết các sản phẩm của shop trong đơn hàng này
+        shop_items_query = text("""
+            SELECT p.name as product_name, 
+                   oi.quantity, 
+                   oi.unit_price,
+                   a.color,
+                   a.size
+            FROM order_items oi
+            JOIN product p ON oi.product_id = p.product_id
+            LEFT JOIN attribute a ON oi.attribute_id = a.attribute_id
+            WHERE oi.order_id = :order_id AND p.shop_id = :shop_id
+        """)
+        
+        shop_items_result = session.execute(shop_items_query, {
+            "order_id": order_row.id,
+            "shop_id": shop.id
+        }).fetchall()
+        
+        shop_items = []
+        shop_subtotal = 0.0
+        total_shop_items = 0
+        
+        for item in shop_items_result:
+            # Convert decimal to float to avoid type mismatch
+            unit_price = float(item.unit_price) if item.unit_price else 0.0
+            item_total = unit_price * item.quantity
+            shop_subtotal += item_total
+            total_shop_items += item.quantity
+            
+            # Tạo attribute_name từ color và size
+            attribute_parts = []
+            if item.color:
+                attribute_parts.append(f"Màu: {item.color}")
+            if item.size:
+                attribute_parts.append(f"Size: {item.size}")
+            attribute_name = " | ".join(attribute_parts) if attribute_parts else "Mặc định"
+            
+            shop_items.append({
+                "product_name": item.product_name,
+                "attribute_name": attribute_name,
+                "quantity": item.quantity,
+                "price": unit_price,
+                "total": item_total
+            })
+        
+        # Tạo OrderForShop object
+        shop_order = OrderForShop(
+            id=order_row.id,
+            order_number=order_row.order_number,
+            status=order_row.status,  # Will be converted by validator
+            customer_name=order_row.recipient_name,
+            customer_phone=order_row.phone_number,
+            shipping_address=order_row.shipping_address,
+            total_items=total_shop_items,
+            total_amount=order_row.total_amount or 0.0,
+            created_at=order_row.created_at,
+            updated_at=order_row.updated_at,
+            confirmed_at=order_row.confirmed_at,
+            shipped_at=order_row.shipped_at,
+            delivered_at=order_row.delivered_at,
+            cancelled_at=order_row.cancelled_at,
+            shop_items=shop_items,
+            shop_subtotal=shop_subtotal
+        )
+        
+        shop_orders.append(shop_order)
+    
+    # Tính toán thống kê cho get_shop_orders
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=today_start.weekday())
+    month_start = today_start.replace(day=1)
+    
+    stats_query = text("""
+        SELECT 
+            COUNT(DISTINCT o.id) as total_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 1 THEN o.id END) as pending_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 2 THEN o.id END) as confirmed_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 3 THEN o.id END) as processing_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 4 THEN o.id END) as shipped_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 5 THEN o.id END) as delivered_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 6 THEN o.id END) as cancelled_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 7 THEN o.id END) as refunded_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 8 THEN o.id END) as returned_orders,
+            COALESCE(SUM(CASE WHEN o.status = 5 THEN oi.total_price END), 0) as total_revenue,
+            COALESCE(SUM(CASE WHEN o.status IN (1,2,3,4) THEN oi.total_price END), 0) as pending_revenue,
+            COUNT(DISTINCT CASE WHEN o.created_at >= :today_start THEN o.id END) as orders_today,
+            COUNT(DISTINCT CASE WHEN o.created_at >= :week_start THEN o.id END) as orders_this_week,
+            COUNT(DISTINCT CASE WHEN o.created_at >= :month_start THEN o.id END) as orders_this_month
+        FROM orders o
+        JOIN order_items oi ON o.id = oi.order_id
+        JOIN product p ON oi.product_id = p.product_id
+        WHERE p.shop_id = :shop_id
+    """)
+    
+    stats_result = session.execute(stats_query, {
+        "shop_id": shop.id,
+        "today_start": today_start,
+        "week_start": week_start,
+        "month_start": month_start
+    }).fetchone()
+    
+    stats = ShopOrderStats(
+        total_orders=stats_result.total_orders or 0,
+        pending_orders=stats_result.pending_orders or 0,
+        confirmed_orders=stats_result.confirmed_orders or 0,
+        processing_orders=stats_result.processing_orders or 0,
+        shipped_orders=stats_result.shipped_orders or 0,
+        delivered_orders=stats_result.delivered_orders or 0,
+        cancelled_orders=stats_result.cancelled_orders or 0,
+        refunded_orders=stats_result.refunded_orders or 0,
+        returned_orders=stats_result.returned_orders or 0,
+        total_revenue=float(stats_result.total_revenue or 0),
+        pending_revenue=float(stats_result.pending_revenue or 0),
+        orders_today=stats_result.orders_today or 0,
+        orders_this_week=stats_result.orders_this_week or 0,
+        orders_this_month=stats_result.orders_this_month or 0,
+        pending_ratings=0  # TODO: Tính toán số rating cần trả lời
+    )
+    
+    # Pagination metadata
+    total_pages = (total_count + limit - 1) // limit
+    has_next = page < total_pages
+    has_prev = page > 1
+    
+    return ShopOrderListResponse(
+        items=shop_orders,
+        stats=stats,
+        total=total_count,
+        page=page,
+        limit=limit,
+        total_pages=total_pages,
+        has_next=has_next,
+        has_prev=has_prev
+    )
+
+@router.get("/shop-stats", response_model=ShopOrderStats)
+def get_shop_stats(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """Lấy thống kê tổng quan đơn hàng của shop (không bao gồm danh sách chi tiết)"""
+    from sqlalchemy import text
+    from api.shop.model import Shop
+    from datetime import datetime, timedelta
+    
+    # Kiểm tra user có shop không
+    shop = session.exec(select(Shop).where(Shop.user_id == current_user.id)).first()
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found for current user")
+    
+    # Tính toán thống kê
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=today_start.weekday())
+    month_start = today_start.replace(day=1)
+    
+    stats_query = text("""
+        SELECT 
+            COUNT(DISTINCT o.id) as total_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 1 THEN o.id END) as pending_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 2 THEN o.id END) as confirmed_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 3 THEN o.id END) as processing_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 4 THEN o.id END) as shipped_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 5 THEN o.id END) as delivered_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 6 THEN o.id END) as cancelled_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 7 THEN o.id END) as refunded_orders,
+            COUNT(DISTINCT CASE WHEN o.status = 8 THEN o.id END) as returned_orders,
+            COALESCE(SUM(CASE WHEN o.status = 5 THEN oi.total_price END), 0) as total_revenue,
+            COALESCE(SUM(CASE WHEN o.status IN (1,2,3,4) THEN oi.total_price END), 0) as pending_revenue,
+            COUNT(DISTINCT CASE WHEN o.created_at >= :today_start THEN o.id END) as orders_today,
+            COUNT(DISTINCT CASE WHEN o.created_at >= :week_start THEN o.id END) as orders_this_week,
+            COUNT(DISTINCT CASE WHEN o.created_at >= :month_start THEN o.id END) as orders_this_month
+        FROM orders o
+        JOIN order_items oi ON o.id = oi.order_id
+        JOIN product p ON oi.product_id = p.product_id
+        WHERE p.shop_id = :shop_id
+    """)
+    
+    stats_result = session.execute(stats_query, {
+        "shop_id": shop.id,
+        "today_start": today_start,
+        "week_start": week_start,
+        "month_start": month_start
+    }).fetchone()
+    
+    # TODO: Tính số lượng ratings cần trả lời
+    # Có thể thêm query để đếm số ratings chưa có phản hồi từ shop
+    pending_ratings_query = text("""
+        SELECT COUNT(*) 
+        FROM shop_ratings sr
+        WHERE sr.shop_id = :shop_id 
+        AND sr.id NOT IN (
+            SELECT rating_id FROM shop_rating_responses 
+            WHERE rating_id = sr.id
+        )
+    """)
+    
+    try:
+        pending_ratings_result = session.execute(pending_ratings_query, {"shop_id": shop.id}).fetchone()
+        pending_ratings_count = pending_ratings_result[0] if pending_ratings_result else 0
+    except:
+        # Nếu bảng shop_rating_responses chưa tồn tại thì skip
+        pending_ratings_count = 0
+    
+    return ShopOrderStats(
+        total_orders=stats_result.total_orders or 0,
+        pending_orders=stats_result.pending_orders or 0,
+        confirmed_orders=stats_result.confirmed_orders or 0,
+        processing_orders=stats_result.processing_orders or 0,
+        shipped_orders=stats_result.shipped_orders or 0,
+        delivered_orders=stats_result.delivered_orders or 0,
+        cancelled_orders=stats_result.cancelled_orders or 0,
+        refunded_orders=stats_result.refunded_orders or 0,
+        returned_orders=stats_result.returned_orders or 0,
+        total_revenue=float(stats_result.total_revenue or 0),
+        pending_revenue=float(stats_result.pending_revenue or 0),
+        orders_today=stats_result.orders_today or 0,
+        orders_this_week=stats_result.orders_this_week or 0,
+        orders_this_month=stats_result.orders_this_month or 0,
+        pending_ratings=pending_ratings_count
+    )
+
+# ===========================
+# ORDER ID ENDPOINTS (đặt cuối để tránh conflict với specific routes)
+# ===========================
 
 @router.get("/{order_id}", response_model=OrderRead)
 def get_order(
