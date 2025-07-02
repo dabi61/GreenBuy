@@ -6,7 +6,7 @@ from pydantic import conint
 # ----- Input Schemas -----
 
 class CartItemCreate(SQLModel):
-    product_id: int
+    attribute_id: int
     quantity: conint(ge=1)
 
 
@@ -17,11 +17,16 @@ class UpdateCartItemQuantity(SQLModel):
 # ----- Output Schemas -----
 
 class CartItemRead(SQLModel):
-    product_id: int
+    attribute_id: int
     quantity: int
+    product_id: Optional[int] = None
     product_name: Optional[str] = None
     price: Optional[float] = None
     cover: Optional[str] = None
+    color: Optional[str] = None
+    size: Optional[str] = None
+    attribute_image: Optional[str] = None
+    available_quantity: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -36,10 +41,6 @@ class CartRead(SQLModel):
     user_id: int
     shops: List[CartShopGroup]
 
-class CartItemCreate(SQLModel):
-    product_id: int
-    quantity: int
-
 # ----- Response Schemas -----
 
 class CartActionResponse(SQLModel):
@@ -48,5 +49,5 @@ class CartActionResponse(SQLModel):
 
 class CartItemActionResponse(SQLModel):
     message: str
-    product_id: int
+    attribute_id: int
     quantity: Optional[int] = None

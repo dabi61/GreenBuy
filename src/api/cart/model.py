@@ -5,19 +5,19 @@ from datetime import datetime
 # Forward references to avoid circular imports
 if TYPE_CHECKING:
     from api.user.model import User
-    from api.product.model import Product
+    from api.attribute.model import Attribute
 
 class CartItem(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
 
     cart_id: int = Field(foreign_key="cart.id")
-    product_id: int = Field(foreign_key="product.product_id")
+    attribute_id: int = Field(foreign_key="attribute.attribute_id")
     quantity: int = Field(default=1)
     added_at: datetime = Field(default_factory=datetime.utcnow)
 
     # 🔁 Relationships
     cart: Optional["Cart"] = Relationship(back_populates="items")
-    product: Optional["Product"] = Relationship(back_populates="cart_items")
+    attribute: Optional["Attribute"] = Relationship(back_populates="cart_items")
 
 
 class Cart(SQLModel, table=True):

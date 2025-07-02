@@ -8,7 +8,6 @@ if TYPE_CHECKING:
     from api.sub_category.model import SubCategory
     from api.user.model import User
     from api.attribute.model import Attribute
-    from api.cart.model import CartItem
     from api.order.model import OrderItem
 
 class Product(SQLModel, table=True):
@@ -34,5 +33,4 @@ class Product(SQLModel, table=True):
         sa_relationship_kwargs={"foreign_keys": "Product.approver_id"}
     )
     attributes: List["Attribute"] = Relationship(back_populates="product")
-    cart_items: List["CartItem"] = Relationship(back_populates="product")
     order_items: List["OrderItem"] = Relationship(back_populates="product")
