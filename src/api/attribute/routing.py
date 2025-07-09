@@ -132,6 +132,20 @@ def delete_attribute(attribute_id: int, session: Session = Depends(get_session))
     if not attr:
         raise HTTPException(status_code=404, detail="Attribute not found")
 
+    # Kiểm tra xem attribute có đang được sử dụng trong cart không
+    from api.cart.model import CartItem
+    cart_items = session.exec(
+        select(CartItem).where(CartItem.attribute_id == attribute_id)
+    ).all()
+    
+    if cart_items:
+        # Nếu có cart items sử dụng attribute này, trả về lỗi
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Không thể xóa attribute này vì có {len(cart_items)} sản phẩm đang trong giỏ hàng của khách hàng"
+        )
+
+    # Nếu không có cart items nào sử dụng, tiến hành xóa
     session.delete(attr)
     session.commit()
-    return {"message": "Attribute deleted successfully"}
+    return {"detail": "Attribute deleted successfully"}
