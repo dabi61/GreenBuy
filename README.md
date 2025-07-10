@@ -50,6 +50,9 @@ erDiagram
     users ||--o{ events : tracks
     users ||--|| cart : has
     users ||--|| shop : owns
+    users ||--o{ approved_products : approves
+    users ||--o{ refund_requests : requests
+    users ||--o{ online_status : tracks
 
     shop ||--o{ products : sells
     shop ||--o{ shop_follows : followed_by
@@ -74,6 +77,7 @@ erDiagram
     payments ||--o{ refund_requests : refunded_by
 
     chat_rooms ||--o{ chat_messages : contains
+    chat_messages ||--o{ chat_messages : replies_to
 
     users {
         int id PK
@@ -92,6 +96,14 @@ erDiagram
         enum role
         datetime created_at
         datetime updated_at
+        datetime last_login
+        int failed_login_attempts
+        datetime locked_until
+        datetime password_changed_at
+        string email_verification_token
+        datetime email_verified_at
+        string password_reset_token
+        datetime password_reset_expires
     }
 
     shop {
@@ -103,6 +115,21 @@ erDiagram
         boolean is_active
         boolean is_online
         datetime create_at
+    }
+
+    category {
+        int id PK
+        string name
+        string description
+        datetime created_at
+    }
+
+    sub_categories {
+        int id PK
+        int category_id FK
+        string name
+        string description
+        datetime created_at
     }
 
     products {
@@ -130,6 +157,21 @@ erDiagram
         datetime create_at
     }
 
+    cart {
+        int id PK
+        int user_id FK
+        datetime created_at
+        datetime updated_at
+    }
+
+    cart_items {
+        int id PK
+        int cart_id FK
+        int attribute_id FK
+        int quantity
+        datetime added_at
+    }
+
     orders {
         int id PK
         string order_number
@@ -147,6 +189,44 @@ erDiagram
         string delivery_notes
         datetime created_at
         datetime updated_at
+        datetime confirmed_at
+        datetime shipped_at
+        datetime delivered_at
+        datetime cancelled_at
+        string notes
+        string internal_notes
+    }
+
+    order_items {
+        int id PK
+        int order_id FK
+        int product_id FK
+        int attribute_id FK
+        string product_name
+        string product_image
+        string attribute_details
+        int quantity
+        float unit_price
+        float total_price
+        datetime created_at
+    }
+
+    payment_method {
+        int id PK
+        int user_id FK
+        enum type
+        string card_number
+        string card_holder_name
+        int expiry_month
+        int expiry_year
+        string paypal_email
+        string bank_name
+        string account_number
+        string account_holder
+        boolean is_default
+        boolean is_active
+        datetime created_at
+        datetime updated_at
     }
 
     payments {
@@ -157,8 +237,72 @@ erDiagram
         string currency
         string status
         string transaction_id
+        string gateway_response
+        string failure_reason
         datetime created_at
+        datetime processed_at
         datetime completed_at
+        string notes
+    }
+
+    refund_requests {
+        int id PK
+        int payment_id FK
+        int user_id FK
+        float amount
+        string reason
+        string status
+        string admin_note
+        int processed_by FK
+        datetime created_at
+        datetime processed_at
+    }
+
+    addresses {
+        int id PK
+        int user_id FK
+        string street
+        string city
+        string state
+        string zipcode
+        string country
+        string phone_number
+        boolean is_default
+        datetime created_at
+    }
+
+    user_follows {
+        int id PK
+        int follower_id FK
+        int following_id FK
+        datetime created_at
+    }
+
+    shop_follows {
+        int id PK
+        int user_id FK
+        int shop_id FK
+        datetime created_at
+    }
+
+    user_ratings {
+        int id PK
+        int rater_id FK
+        int rated_user_id FK
+        int rating
+        string comment
+        datetime created_at
+        datetime updated_at
+    }
+
+    shop_ratings {
+        int id PK
+        int user_id FK
+        int shop_id FK
+        int rating
+        string comment
+        datetime created_at
+        datetime updated_at
     }
 
     chat_rooms {
@@ -168,6 +312,47 @@ erDiagram
         datetime created_at
         datetime updated_at
         boolean is_active
+        int last_message_id
+        datetime last_activity
+    }
+
+    chat_messages {
+        int id PK
+        int room_id FK
+        int sender_id FK
+        string content
+        enum type
+        enum status
+        datetime timestamp
+        string file_url
+        int file_size
+        string file_name
+        string thumbnail_url
+        int duration
+        float latitude
+        float longitude
+        int reply_to_id FK
+        boolean is_edited
+        datetime edited_at
+        boolean is_deleted
+        datetime deleted_at
+    }
+
+    online_status {
+        int user_id PK
+        boolean is_online
+        datetime last_seen
+        string device_info
+        datetime updated_at
+    }
+
+    events {
+        int id PK
+        int user_id FK
+        string page
+        string descriptions
+        datetime created_at
+        datetime update_at
     }
 ```
 
