@@ -6,7 +6,7 @@ from .model import Product
 from .scheme import ProductRead
 from api.db.pagination import PaginatedResponse
 from api.auth.dependency import get_current_user
-from api.auth.permission import require_seller_or_approver, ensure_resource_access, require_approver
+from api.auth.permission import require_seller_or_approver, ensure_resource_access, require_admin_or_approver
 from api.auth.auth import get_session
 from api.shop.model import Shop
 from api.user.model import User
@@ -145,10 +145,10 @@ def get_products(
 # 📋 Get pending approval products (must be before /{product_id})
 @router.get("/pending-approval", response_model=List[ProductRead])
 def get_pending_products(
-    current_user: Annotated[User, Depends(require_approver)],
+    current_user: Annotated[User, Depends(require_admin_or_approver)],
     session: Session = Depends(get_session),
 ):
-    """Lấy danh sách product chưa được approve (chỉ dành cho approver)"""
+    """Lấy danh sách product chưa được approve (dành cho admin và approver)"""
     products = session.exec(
         select(Product).where(Product.is_approved == None)
     ).all()
@@ -675,10 +675,10 @@ async def update_product(
 def approve_product(
     product_id: int,
     approval_request: ProductApprovalRequest,
-    current_user: Annotated[User, Depends(require_approver)],
+    current_user: Annotated[User, Depends(require_admin_or_approver)],
     session: Session = Depends(get_session),
 ):
-    """Approve hoặc reject product (chỉ dành cho approver)"""
+    """Approve hoặc reject product (dành cho admin và approver)"""
     product = session.get(Product, product_id)
     if not product:
         raise HTTPException(404, detail="Product not found")
