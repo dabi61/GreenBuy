@@ -1088,15 +1088,15 @@ def get_admin_order_stats(
     returned_orders = session.exec(select(func.count(Order.id)).where(Order.status == OrderStatus.RETURNED)).one()
     
     # Payment stats (using raw SQL to avoid enum issues)
-    paid_count = session.exec(
+    paid_count_result = session.exec(
         text("SELECT COUNT(*) FROM orders o JOIN payment p ON o.id = p.order_id WHERE p.status = 'completed'")
     ).first()
-    paid_orders = paid_count if paid_count else 0
+    paid_orders = int(paid_count_result[0]) if paid_count_result else 0
     
-    failed_count = session.exec(
+    failed_count_result = session.exec(
         text("SELECT COUNT(*) FROM orders o JOIN payment p ON o.id = p.order_id WHERE p.status = 'failed'")
     ).first()
-    failed_payments = failed_count if failed_count else 0
+    failed_payments = int(failed_count_result[0]) if failed_count_result else 0
     
     unpaid_orders = total_orders - paid_orders
     
@@ -1104,12 +1104,12 @@ def get_admin_order_stats(
     total_revenue_result = session.exec(
         text("SELECT COALESCE(SUM(o.total_amount), 0) FROM orders o JOIN payment p ON o.id = p.order_id WHERE p.status = 'completed'")
     ).first()
-    total_revenue = float(total_revenue_result) if total_revenue_result else 0.0
+    total_revenue = float(total_revenue_result[0]) if total_revenue_result else 0.0
     
     pending_revenue_result = session.exec(
         text("SELECT COALESCE(SUM(o.total_amount), 0) FROM orders o LEFT JOIN payment p ON o.id = p.order_id WHERE p.status IS NULL OR p.status != 'completed'")
     ).first()
-    pending_revenue = float(pending_revenue_result) if pending_revenue_result else 0.0
+    pending_revenue = float(pending_revenue_result[0]) if pending_revenue_result else 0.0
     
     # Time-based stats
     today = datetime.now().date()
