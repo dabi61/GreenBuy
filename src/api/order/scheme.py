@@ -213,3 +213,147 @@ class ShopOrderListResponse(BaseModel):
     total_pages: int
     has_next: bool
     has_prev: bool
+
+# ==================== ADMIN ORDER MANAGEMENT ====================
+
+class AdminOrderRead(BaseModel):
+    """Chi tiết đơn hàng cho admin với thông tin thanh toán"""
+    id: int
+    order_number: str
+    user_id: int
+    customer_name: str  # recipient_name
+    customer_email: Optional[str] = None
+    customer_phone: str  # phone_number
+    status: str
+    
+    # Pricing info
+    subtotal: Optional[float] = 0.0
+    tax_amount: Optional[float] = 0.0
+    shipping_fee: Optional[float] = 0.0
+    discount_amount: Optional[float] = 0.0
+    total_amount: Optional[float] = 0.0
+    
+    # Address info
+    shipping_address: str
+    billing_address: Optional[str] = None
+    delivery_notes: Optional[str] = None
+    
+    # Payment info
+    payment_status: Optional[str] = None  # pending, completed, failed, etc.
+    payment_method: Optional[str] = None
+    payment_amount: Optional[float] = None
+    transaction_id: Optional[str] = None
+    
+    # Timestamps
+    created_at: datetime
+    updated_at: datetime
+    confirmed_at: Optional[datetime] = None
+    shipped_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
+    
+    # Order items
+    items: List[OrderItemRead] = []
+    
+    # Notes
+    notes: Optional[str] = None
+    internal_notes: Optional[str] = None
+    
+    @validator('status', pre=True)
+    def convert_status_to_string(cls, v):
+        """Convert integer status to string name"""
+        if isinstance(v, int):
+            return OrderStatus.get_name(v)
+        return v
+    
+    class Config:
+        from_attributes = True
+
+class AdminOrderSummary(BaseModel):
+    """Tóm tắt đơn hàng cho admin"""
+    id: int
+    order_number: str
+    user_id: int
+    customer_name: str  # recipient_name
+    customer_phone: str  # phone_number
+    status: str
+    total_amount: float
+    payment_status: Optional[str] = None
+    payment_method: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    
+    @validator('status', pre=True)
+    def convert_status_to_string(cls, v):
+        """Convert integer status to string name"""
+        if isinstance(v, int):
+            return OrderStatus.get_name(v)
+        return v
+    
+    class Config:
+        from_attributes = True
+
+class AdminOrderListResponse(BaseModel):
+    """Response cho danh sách đơn hàng admin"""
+    items: List[AdminOrderSummary]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+class AdminOrderStats(BaseModel):
+    """Thống kê đơn hàng cho admin"""
+    total_orders: int
+    
+    # Orders by status
+    pending_orders: int      # status = 1
+    confirmed_orders: int    # status = 2  
+    processing_orders: int   # status = 3
+    shipped_orders: int      # status = 4
+    delivered_orders: int    # status = 5
+    cancelled_orders: int    # status = 6
+    refunded_orders: int     # status = 7
+    returned_orders: int     # status = 8
+    
+    # Payment stats
+    paid_orders: int         # payment status = completed
+    unpaid_orders: int       # no payment or payment status != completed
+    failed_payments: int     # payment status = failed
+    
+    # Revenue stats
+    total_revenue: float     # Tổng doanh thu từ các đơn đã thanh toán
+    pending_revenue: float   # Doanh thu từ các đơn chưa thanh toán
+    
+    # Time-based stats
+    orders_today: int
+    orders_this_week: int
+    orders_this_month: int
+    
+    # Average order value
+    avg_order_value: float
+
+class AdminOrderStatusUpdateRequest(BaseModel):
+    """Request để admin cập nhật status order"""
+    status: int = Field(ge=1, le=8, description="Status must be between 1-8")
+    internal_notes: Optional[str] = Field(default=None, max_length=1000)
+    notify_customer: bool = Field(default=True, description="Có gửi thông báo cho khách hàng không")
+    
+    @validator('status')
+    def validate_status_transition(cls, v):
+        valid_statuses = [1, 2, 3, 4, 5, 6, 7, 8]
+        if v not in valid_statuses:
+            raise ValueError(f'Invalid status. Must be one of: {valid_statuses}')
+        return v
+
+class AdminOrderFilter(BaseModel):
+    """Filter cho admin order list"""
+    status: Optional[str] = None  # pending, confirmed, processing, shipped, delivered, cancelled, refunded, returned
+    payment_status: Optional[str] = None  # pending, completed, failed, cancelled, refunded
+    date_from: Optional[str] = None  # YYYY-MM-DD
+    date_to: Optional[str] = None    # YYYY-MM-DD
+    customer_search: Optional[str] = None  # Search by customer name, phone, email
+    order_number: Optional[str] = None
+    min_amount: Optional[float] = None
+    max_amount: Optional[float] = None

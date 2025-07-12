@@ -11,7 +11,9 @@ from api.product.model import Product
 from api.order.scheme import (
     OrderCreate, OrderRead, OrderUpdate, OrderStatusUpdate, 
     OrderSummary, CancelOrderRequest, OrderListResponse,
-    OrderForShop, ShopOrderStats, ShopOrderListResponse
+    OrderForShop, ShopOrderStats, ShopOrderListResponse,
+    AdminOrderRead, AdminOrderSummary, AdminOrderListResponse,
+    AdminOrderStats, AdminOrderStatusUpdateRequest, AdminOrderFilter
 )
 from api.user.model import User
 from datetime import datetime
@@ -795,3 +797,445 @@ def delete_order(
             status_code=500,
             detail=f"Failed to delete order: {str(e)}"
         )
+
+# ==================== ADMIN ORDER MANAGEMENT ====================
+
+@router.get("/admin/orders", response_model=AdminOrderListResponse)
+def get_admin_orders(
+    current_user: User = Depends(require_admin_or_approver),
+    session: Session = Depends(get_session),
+    page: int = Query(1, ge=1, description="Trang hiện tại"),
+    limit: int = Query(10, ge=1, le=100, description="Số lượng order mỗi trang"),
+    status: Optional[str] = Query(None, description="Filter theo status order"),
+    payment_status: Optional[str] = Query(None, description="Filter theo payment status"),
+    date_from: Optional[str] = Query(None, description="Lọc từ ngày (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Lọc đến ngày (YYYY-MM-DD)"),
+    customer_search: Optional[str] = Query(None, description="Tìm kiếm khách hàng"),
+    order_number: Optional[str] = Query(None, description="Tìm kiếm theo số order"),
+    min_amount: Optional[float] = Query(None, description="Giá trị đơn hàng tối thiểu"),
+    max_amount: Optional[float] = Query(None, description="Giá trị đơn hàng tối đa"),
+):
+    """Lấy danh sách tất cả đơn hàng cho admin với filter và pagination"""
+    from sqlmodel import func, or_
+    from datetime import datetime
+    from api.payment.model import Payment, PaymentMethod
+    
+    # Simplified approach: Get orders first, then get payment info separately
+    base_query = select(Order)
+    
+    # Apply filters
+    conditions = []
+    
+    # Status filter
+    if status:
+        try:
+            status_int = int(status)
+            conditions.append(Order.status == status_int)
+        except ValueError:
+            status_int = OrderStatus.get_id(status.lower())
+            conditions.append(Order.status == status_int)
+    
+    # Date range filter
+    if date_from:
+        try:
+            date_from_dt = datetime.strptime(date_from, "%Y-%m-%d")
+            conditions.append(Order.created_at >= date_from_dt)
+        except ValueError:
+            pass
+    
+    if date_to:
+        try:
+            date_to_dt = datetime.strptime(date_to, "%Y-%m-%d")
+            conditions.append(Order.created_at <= date_to_dt)
+        except ValueError:
+            pass
+    
+    # Customer search
+    if customer_search:
+        conditions.append(
+            or_(
+                Order.recipient_name.ilike(f"%{customer_search}%"),
+                Order.phone_number.ilike(f"%{customer_search}%")
+            )
+        )
+    
+    # Order number search
+    if order_number:
+        conditions.append(Order.order_number.ilike(f"%{order_number}%"))
+    
+    # Amount range
+    if min_amount is not None:
+        conditions.append(Order.total_amount >= min_amount)
+    if max_amount is not None:
+        conditions.append(Order.total_amount <= max_amount)
+    
+    # Apply conditions
+    if conditions:
+        base_query = base_query.where(and_(*conditions))
+    
+    # Get all orders first (for payment status filtering)
+    all_orders = session.exec(base_query).all()
+    
+    # Filter by payment status if specified
+    filtered_orders = []
+    if payment_status:
+        for order in all_orders:
+            payment = session.exec(
+                select(Payment).where(Payment.order_id == order.id)
+            ).first()
+            
+            if payment_status == "pending":
+                if not payment or payment.status == "pending":
+                    filtered_orders.append(order)
+            else:
+                if payment and payment.status == payment_status:
+                    filtered_orders.append(order)
+    else:
+        filtered_orders = all_orders
+    
+    # Calculate pagination
+    total = len(filtered_orders)
+    offset = (page - 1) * limit
+    paginated_orders = filtered_orders[offset:offset + limit]
+    
+    # Convert to response format with payment info
+    items = []
+    for order in paginated_orders:
+        # Get payment info
+        payment = session.exec(
+            select(Payment).where(Payment.order_id == order.id)
+        ).first()
+        
+        payment_method = None
+        if payment and payment.payment_method_id:
+            payment_method = session.exec(
+                select(PaymentMethod).where(PaymentMethod.id == payment.payment_method_id)
+            ).first()
+        
+        items.append(AdminOrderSummary(
+            id=order.id,
+            order_number=order.order_number,
+            user_id=order.user_id,
+            customer_name=order.recipient_name,
+            customer_phone=order.phone_number,
+            status=order.status,
+            total_amount=order.total_amount,
+            payment_status=payment.status if payment else "pending",
+            payment_method=payment_method.type if payment_method else None,
+            created_at=order.created_at,
+            updated_at=order.updated_at
+        ))
+    
+    # Calculate pagination metadata
+    total_pages = (total + limit - 1) // limit
+    has_next = page < total_pages
+    has_prev = page > 1
+    
+    return AdminOrderListResponse(
+        items=items,
+        total=total,
+        page=page,
+        limit=limit,
+        total_pages=total_pages,
+        has_next=has_next,
+        has_prev=has_prev
+    )
+
+@router.get("/admin/orders/{order_id}", response_model=AdminOrderRead)
+def get_admin_order_detail(
+    order_id: int,
+    current_user: User = Depends(require_admin_or_approver),
+    session: Session = Depends(get_session)
+):
+    """Lấy chi tiết đơn hàng cho admin với thông tin thanh toán"""
+    
+    # Get order với payment info
+    order = session.exec(
+        select(Order).where(Order.id == order_id)
+    ).first()
+    
+    if not order:
+        raise HTTPException(404, detail="Order not found")
+    
+    # Get payment info
+    from api.payment.model import Payment, PaymentMethod
+    payment = session.exec(
+        select(Payment).where(Payment.order_id == order_id)
+    ).first()
+    
+    payment_method = None
+    if payment and payment.payment_method_id:
+        payment_method = session.exec(
+            select(PaymentMethod).where(PaymentMethod.id == payment.payment_method_id)
+        ).first()
+    
+    # Get customer info
+    customer = session.exec(
+        select(User).where(User.id == order.user_id)
+    ).first()
+    
+    # Get order items
+    items = session.exec(
+        select(OrderItem).where(OrderItem.order_id == order_id)
+    ).all()
+    
+    # Convert to response
+    return AdminOrderRead(
+        id=order.id,
+        order_number=order.order_number,
+        user_id=order.user_id,
+        customer_name=order.recipient_name,
+        customer_email=customer.email if customer else None,
+        customer_phone=order.phone_number,
+        status=order.status,
+        subtotal=order.subtotal,
+        tax_amount=order.tax_amount,
+        shipping_fee=order.shipping_fee,
+        discount_amount=order.discount_amount,
+        total_amount=order.total_amount,
+        shipping_address=order.shipping_address,
+        billing_address=order.billing_address,
+        delivery_notes=order.delivery_notes,
+        payment_status=payment.status if payment else None,
+        payment_method=payment_method.type if payment_method else None,
+        payment_amount=payment.amount if payment else None,
+        transaction_id=payment.transaction_id if payment else None,
+        created_at=order.created_at,
+        updated_at=order.updated_at,
+        confirmed_at=order.confirmed_at,
+        shipped_at=order.shipped_at,
+        delivered_at=order.delivered_at,
+        cancelled_at=order.cancelled_at,
+        items=items,
+        notes=order.notes,
+        internal_notes=order.internal_notes
+    )
+
+@router.patch("/admin/orders/{order_id}/status", response_model=AdminOrderRead)
+def update_admin_order_status(
+    order_id: int,
+    status_update: AdminOrderStatusUpdateRequest,
+    current_user: User = Depends(require_admin_or_approver),
+    session: Session = Depends(get_session)
+):
+    """Admin cập nhật status đơn hàng"""
+    
+    order = session.exec(
+        select(Order).where(Order.id == order_id)
+    ).first()
+    
+    if not order:
+        raise HTTPException(404, detail="Order not found")
+    
+    # Validate status transition
+    valid_next_statuses = order.get_valid_next_statuses()
+    if status_update.status not in valid_next_statuses and status_update.status != order.status:
+        current_status_name = OrderStatus.get_name(order.status)
+        valid_names = [OrderStatus.get_name(s) for s in valid_next_statuses]
+        raise HTTPException(
+            400, 
+            detail=f"Invalid status transition from {current_status_name} to {OrderStatus.get_name(status_update.status)}. Valid next statuses: {valid_names}"
+        )
+    
+    # Update status
+    old_status = order.status
+    order.status = status_update.status
+    order.updated_at = datetime.utcnow()
+    
+    # Update internal notes
+    if status_update.internal_notes:
+        order.internal_notes = status_update.internal_notes
+    
+    # Update timestamps based on status
+    now = datetime.utcnow()
+    if status_update.status == OrderStatus.CONFIRMED:
+        order.confirmed_at = now
+    elif status_update.status == OrderStatus.SHIPPED:
+        order.shipped_at = now
+    elif status_update.status == OrderStatus.DELIVERED:
+        order.delivered_at = now
+    elif status_update.status == OrderStatus.CANCELLED:
+        order.cancelled_at = now
+    
+    session.add(order)
+    session.commit()
+    session.refresh(order)
+    
+    # TODO: Implement notification to customer if status_update.notify_customer is True
+    
+    return get_admin_order_detail(order_id, current_user, session)
+
+@router.get("/admin/stats", response_model=AdminOrderStats)
+def get_admin_order_stats(
+    current_user: User = Depends(require_admin_or_approver),
+    session: Session = Depends(get_session)
+):
+    """Lấy thống kê tổng quan đơn hàng cho admin"""
+    from sqlmodel import func
+    from datetime import datetime, timedelta
+    
+    # Total orders
+    total_orders = session.exec(select(func.count(Order.id))).one()
+    
+    # Orders by status
+    pending_orders = session.exec(select(func.count(Order.id)).where(Order.status == OrderStatus.PENDING)).one()
+    confirmed_orders = session.exec(select(func.count(Order.id)).where(Order.status == OrderStatus.CONFIRMED)).one()
+    processing_orders = session.exec(select(func.count(Order.id)).where(Order.status == OrderStatus.PROCESSING)).one()
+    shipped_orders = session.exec(select(func.count(Order.id)).where(Order.status == OrderStatus.SHIPPED)).one()
+    delivered_orders = session.exec(select(func.count(Order.id)).where(Order.status == OrderStatus.DELIVERED)).one()
+    cancelled_orders = session.exec(select(func.count(Order.id)).where(Order.status == OrderStatus.CANCELLED)).one()
+    refunded_orders = session.exec(select(func.count(Order.id)).where(Order.status == OrderStatus.REFUNDED)).one()
+    returned_orders = session.exec(select(func.count(Order.id)).where(Order.status == OrderStatus.RETURNED)).one()
+    
+    # Payment stats (using raw SQL to avoid enum issues)
+    paid_count = session.exec(
+        text("SELECT COUNT(*) FROM orders o JOIN payment p ON o.id = p.order_id WHERE p.status = 'completed'")
+    ).first()
+    paid_orders = paid_count if paid_count else 0
+    
+    failed_count = session.exec(
+        text("SELECT COUNT(*) FROM orders o JOIN payment p ON o.id = p.order_id WHERE p.status = 'failed'")
+    ).first()
+    failed_payments = failed_count if failed_count else 0
+    
+    unpaid_orders = total_orders - paid_orders
+    
+    # Revenue stats
+    total_revenue_result = session.exec(
+        text("SELECT COALESCE(SUM(o.total_amount), 0) FROM orders o JOIN payment p ON o.id = p.order_id WHERE p.status = 'completed'")
+    ).first()
+    total_revenue = float(total_revenue_result) if total_revenue_result else 0.0
+    
+    pending_revenue_result = session.exec(
+        text("SELECT COALESCE(SUM(o.total_amount), 0) FROM orders o LEFT JOIN payment p ON o.id = p.order_id WHERE p.status IS NULL OR p.status != 'completed'")
+    ).first()
+    pending_revenue = float(pending_revenue_result) if pending_revenue_result else 0.0
+    
+    # Time-based stats
+    today = datetime.now().date()
+    week_ago = today - timedelta(days=7)
+    month_ago = today - timedelta(days=30)
+    
+    orders_today = session.exec(
+        select(func.count(Order.id)).where(func.date(Order.created_at) == today)
+    ).one()
+    
+    orders_this_week = session.exec(
+        select(func.count(Order.id)).where(func.date(Order.created_at) >= week_ago)
+    ).one()
+    
+    orders_this_month = session.exec(
+        select(func.count(Order.id)).where(func.date(Order.created_at) >= month_ago)
+    ).one()
+    
+    # Average order value
+    avg_order_value = 0.0
+    if total_orders > 0:
+        avg_result = session.exec(select(func.avg(Order.total_amount))).one()
+        avg_order_value = float(avg_result) if avg_result else 0.0
+    
+    return AdminOrderStats(
+        total_orders=total_orders,
+        pending_orders=pending_orders,
+        confirmed_orders=confirmed_orders,
+        processing_orders=processing_orders,
+        shipped_orders=shipped_orders,
+        delivered_orders=delivered_orders,
+        cancelled_orders=cancelled_orders,
+        refunded_orders=refunded_orders,
+        returned_orders=returned_orders,
+        paid_orders=paid_orders,
+        unpaid_orders=unpaid_orders,
+        failed_payments=failed_payments,
+        total_revenue=total_revenue,
+        pending_revenue=pending_revenue,
+        orders_today=orders_today,
+        orders_this_week=orders_this_week,
+        orders_this_month=orders_this_month,
+        avg_order_value=avg_order_value
+    )
+
+@router.get("/admin/orders/by-payment-status/{payment_status}", response_model=AdminOrderListResponse)
+def get_orders_by_payment_status(
+    payment_status: str,
+    current_user: User = Depends(require_admin_or_approver),
+    session: Session = Depends(get_session),
+    page: int = Query(1, ge=1, description="Trang hiện tại"),
+    limit: int = Query(10, ge=1, le=100, description="Số lượng order mỗi trang"),
+):
+    """Lấy đơn hàng theo trạng thái thanh toán"""
+    from sqlmodel import func
+    from api.payment.model import Payment, PaymentMethod
+    
+    # Validate payment status
+    valid_statuses = ["pending", "processing", "completed", "failed", "cancelled", "refunded", "partially_refunded"]
+    if payment_status not in valid_statuses:
+        raise HTTPException(400, detail=f"Invalid payment status. Valid values: {valid_statuses}")
+    
+    # Get all orders
+    all_orders = session.exec(select(Order)).all()
+    
+    # Filter orders by payment status
+    filtered_orders = []
+    for order in all_orders:
+        payment = session.exec(
+            select(Payment).where(Payment.order_id == order.id)
+        ).first()
+        
+        if payment_status == "pending":
+            if not payment or payment.status == "pending":
+                filtered_orders.append(order)
+        else:
+            if payment and payment.status == payment_status:
+                filtered_orders.append(order)
+    
+    # Sort by created_at desc
+    filtered_orders.sort(key=lambda x: x.created_at, reverse=True)
+    
+    # Calculate pagination
+    total = len(filtered_orders)
+    offset = (page - 1) * limit
+    paginated_orders = filtered_orders[offset:offset + limit]
+    
+    # Convert to response format
+    items = []
+    for order in paginated_orders:
+        # Get payment info
+        payment = session.exec(
+            select(Payment).where(Payment.order_id == order.id)
+        ).first()
+        
+        payment_method = None
+        if payment and payment.payment_method_id:
+            payment_method = session.exec(
+                select(PaymentMethod).where(PaymentMethod.id == payment.payment_method_id)
+            ).first()
+        
+        items.append(AdminOrderSummary(
+            id=order.id,
+            order_number=order.order_number,
+            user_id=order.user_id,
+            customer_name=order.recipient_name,
+            customer_phone=order.phone_number,
+            status=order.status,
+            total_amount=order.total_amount,
+            payment_status=payment.status if payment else "pending",
+            payment_method=payment_method.type if payment_method else None,
+            created_at=order.created_at,
+            updated_at=order.updated_at
+        ))
+    
+    # Calculate pagination metadata
+    total_pages = (total + limit - 1) // limit
+    has_next = page < total_pages
+    has_prev = page > 1
+    
+    return AdminOrderListResponse(
+        items=items,
+        total=total,
+        page=page,
+        limit=limit,
+        total_pages=total_pages,
+        has_next=has_next,
+        has_prev=has_prev
+    )
